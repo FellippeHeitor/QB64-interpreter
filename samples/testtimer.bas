@@ -8,6 +8,7 @@ END IF
 
 IF sec > 10 THEN
     sec = 10
+    PRINT "That's just too long."
 END IF
 
 PRINT "Will wait for";

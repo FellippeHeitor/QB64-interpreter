@@ -1,4 +1,5 @@
 CONST true = -1, false = NOT true
+CONST debugging = false
 
 ON ERROR GOTO oops
 
@@ -135,7 +136,7 @@ DO
             IF VAL(MID$(L$, 6)) <= UBOUND(program) THEN
                 DIM row AS INTEGER, col AS INTEGER
                 row = CSRLIN: col = POS(1)
-                PRINT program(VAL(MID$(L$, 6)))
+                PRINT LEFT$(program(VAL(MID$(L$, 6))), 80);
                 DO
                     LOCATE row, col, 1
                     k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
@@ -146,7 +147,7 @@ DO
                             FOR i = 1 TO 80
                                 p$ = p$ + CHR$(SCREEN(row, i))
                             NEXT
-                            program(VAL(MID$(L$, 6))) = LTRIM$(RTRIM$(p$))
+                            program(VAL(MID$(L$, 6))) = RTRIM$(p$)
                             EXIT DO
                         CASE CHR$(27)
                             EXIT DO
@@ -396,6 +397,7 @@ DO
         END SELECT
     ELSEIF LEFT$(L$, 6) = "SCREEN" THEN
         PRINT s%
+
     ELSEIF L$ = "END IF" THEN
         IF running THEN
             IF ifLine = 0 THEN
@@ -657,14 +659,22 @@ FUNCTION load%% (file$)
     END IF
 END FUNCTION
 
-FUNCTION GetVal## (c$)
+FUNCTION GetVal## (__c$)
+    DIM c$
+
+    IF hasOperator(__c$) THEN
+        c$ = LEFT$(__c$, firstOperator(__c$) - 1)
+    ELSE
+        c$ = __c$
+    END IF
+
     IF VAL(c$) > 0 THEN
         GetVal## = VAL(c$)
     ELSE
         varIndex = searchVar(c$)
         IF varIndex THEN
             IF vars(varIndex).type = varTypeSTRING THEN
-                EXIT FUNCTION
+                GetVal## = VAL(strings(varIndex)) 'auto conversion
             ELSE
                 GetVal## = nums(varIndex)
             END IF
@@ -675,22 +685,25 @@ FUNCTION GetVal## (c$)
 END FUNCTION
 
 FUNCTION doMath$ (v$)
-    DIM v1$, v2$, temp$
+    DIM v1$, v2$, temp$, continue AS _BYTE
 
-    IF INSTR(v$, "+") THEN
-        s$ = "+"
-    ELSEIF INSTR(v$, "-") THEN
-        s$ = "-"
-    ELSEIF INSTR(v$, "*") THEN
-        s$ = "*"
-    ELSEIF INSTR(v$, "/") THEN
-        s$ = "/"
+    IF debugging THEN PRINT "doing math on "; v$
+
+    IF hasOperator(v$) THEN
+        s$ = MID$(v$, firstOperator(v$), 1)
     ELSE
+        doMath$ = v$
         EXIT FUNCTION
     END IF
 
     v1$ = LEFT$(v$, INSTR(v$, s$) - 1)
-    v2$ = MID$(v$, INSTR(v$, s$) + 1)
+    v2$ = MID$(v$, firstOperator(v$) + 1)
+
+    IF debugging THEN
+        PRINT "found    "; v1$, s$, v2$
+        PRINT "getval():"; GetVal(v1$), GetVal(v2$)
+    END IF
+
     SELECT CASE s$
         CASE "+"
             temp$ = STR$(GetVal(v1$) + GetVal(v2$))
@@ -702,5 +715,32 @@ FUNCTION doMath$ (v$)
             temp$ = STR$(GetVal(v1$) / GetVal(v2$))
     END SELECT
 
+    IF debugging THEN PRINT "temp$="; temp$
+
+    DO WHILE hasOperator(v2$)
+        s$ = MID$(v2$, firstOperator(v2$), 1)
+        v2$ = MID$(v2$, firstOperator(v2$) + 1)
+        IF debugging THEN PRINT "passing "; temp$ + s$ + v2$
+        temp$ = doMath$(temp$ + s$ + v2$)
+        v2$ = MID$(v2$, firstOperator(v2$) + LEN(v2$))
+    LOOP
+
     doMath$ = LTRIM$(RTRIM$(temp$))
+END FUNCTION
+
+FUNCTION hasOperator%% (v$)
+    hasOperator%% = INSTR(v$, "+") > 0 OR INSTR(v$, "-") > 0 OR INSTR(v$, "*") > 0 OR INSTR(v$, "/") > 0
+END FUNCTION
+
+FUNCTION firstOperator& (v$)
+    DIM i AS LONG, op$
+
+    op$ = "+-*/"
+
+    FOR i = 1 TO LEN(v$)
+        IF INSTR(op$, MID$(v$, i, 1)) THEN
+            firstOperator = i
+            EXIT FUNCTION
+        END IF
+    NEXT
 END FUNCTION
