@@ -322,7 +322,9 @@ DO
                 END IF
                 IF NOT retainCursor THEN PRINT
             ELSE
-                PRINT 0;
+                DIM t$
+                t$ = doMath(MID$(L1$, 7))
+                IF LEN(t$) THEN PRINT t$; ELSE PRINT GetVal(MID$(L1$, 7));
                 IF NOT retainCursor THEN PRINT
             END IF
         END IF
@@ -480,41 +482,21 @@ DO
         ELSE
             DIM v$, v1$, v2$
             v$ = MID$(L1$, INSTR(L1$, "=") + 1)
-            IF INSTR(v$, "+") THEN
-                s$ = "+"
-            ELSEIF INSTR(v$, "-") THEN
-                s$ = "-"
-            ELSEIF INSTR(v$, "*") THEN
-                s$ = "*"
-            ELSEIF INSTR(v$, "/") THEN
-                s$ = "/"
-            ELSE
-                s$ = ""
-            END IF
-            IF s$ = "" THEN
+
+            t$ = doMath(v$)
+
+            IF t$ = "" THEN
                 IF vars(varIndex).type = varTypeINTEGER THEN
                     nums(varIndex) = INT(GetVal(v$))
                 ELSE
                     nums(varIndex) = GetVal(v$)
                 END IF
             ELSE
-                v1$ = LEFT$(v$, INSTR(v$, s$) - 1)
-                v2$ = MID$(v$, INSTR(v$, s$) + 1)
-                SELECT CASE s$
-                    CASE "+"
-                        nums(varIndex) = GetVal(v1$) + GetVal(v2$)
-                    CASE "-"
-                        nums(varIndex) = GetVal(v1$) - GetVal(v2$)
-                    CASE "*"
-                        nums(varIndex) = GetVal(v1$) * GetVal(v2$)
-                    CASE "/"
-                        nums(varIndex) = GetVal(v1$) / GetVal(v2$)
-                END SELECT
+                nums(varIndex) = GetVal(t$)
 
                 IF vars(varIndex).type = varTypeINTEGER THEN
                     nums(varIndex) = INT(nums(varIndex))
                 END IF
-
             END IF
         END IF
     ELSE
@@ -548,14 +530,9 @@ FUNCTION addVar~& (varName$)
     DIM i AS _UNSIGNED LONG, found AS _BYTE
 
     'check if var exists
-    FOR i = 1 TO totalVars
-        IF LCASE$(RTRIM$(vars(i).name)) = LCASE$(varName$) THEN
-            found = true
-            EXIT FOR
-        END IF
-    NEXT
+    found = searchVar(varName$)
 
-    IF found THEN addVar~& = i: EXIT FUNCTION
+    IF found THEN addVar~& = found: EXIT FUNCTION
 
     totalVars = totalVars + 1
     IF totalVars > UBOUND(vars) THEN
@@ -565,8 +542,39 @@ FUNCTION addVar~& (varName$)
     END IF
 
     vars(totalVars).name = varName$
+
+    'type detection -----------------------------------------------------------
     IF RIGHT$(varName$, 1) = "$" THEN vars(totalVars).type = varTypeSTRING
-    IF RIGHT$(varName$, 1) = "%" THEN vars(totalVars).type = varTypeINTEGER
+
+    IF RIGHT$(varName$, 3) = "~%%" THEN
+        vars(totalVars).type = varType_UBYTE
+    ELSEIF RIGHT$(varName$, 2) = "%%" THEN
+        vars(totalVars).type = varType_BYTE
+    ELSEIF RIGHT$(varName$, 2) = "~%" THEN
+        vars(totalVars).type = varType_UINTEGER
+    ELSEIF RIGHT$(varName$, 1) = "%" THEN
+        vars(totalVars).type = varTypeINTEGER
+    END IF
+
+    IF RIGHT$(varName$, 1) = "!" THEN
+        vars(totalVars).type = varTypeSINGLE
+    ELSEIF RIGHT$(varName$, 2) = "##" THEN
+        vars(totalVars).type = varType_FLOAT
+    ELSEIF RIGHT$(varName$, 1) = "#" THEN
+        vars(totalVars).type = varTypeDOUBLE
+    END IF
+
+    IF RIGHT$(varName$, 3) = "~&&" THEN
+        vars(totalVars).type = varType_UINTEGER64
+    ELSEIF RIGHT$(varName$, 2) = "&&" THEN
+        vars(totalVars).type = varType_INTEGER64
+    ELSEIF RIGHT$(varName$, 2) = "~&" THEN
+        vars(totalVars).type = varType_ULONG
+    ELSEIF RIGHT$(varName$, 1) = "&" THEN
+        vars(totalVars).type = varType_LONG
+    END IF
+    '--------------------------------------------------------------------------
+
     vars(totalVars).scope = thisScope$
     addVar~& = totalVars
 END FUNCTION
@@ -617,7 +625,7 @@ FUNCTION searchVar~& (varName$)
     NEXT
 
     IF found THEN searchVar~& = i
-    IF special THEN
+    IF special AND i <= UBOUND(vars) THEN
         nums(i) = temp##
         strings(i) = temp$
     END IF
@@ -664,4 +672,35 @@ FUNCTION GetVal## (c$)
             GetVal## = VAL(c$) 'maybe it was 0 anyway...
         END IF
     END IF
+END FUNCTION
+
+FUNCTION doMath$ (v$)
+    DIM v1$, v2$, temp$
+
+    IF INSTR(v$, "+") THEN
+        s$ = "+"
+    ELSEIF INSTR(v$, "-") THEN
+        s$ = "-"
+    ELSEIF INSTR(v$, "*") THEN
+        s$ = "*"
+    ELSEIF INSTR(v$, "/") THEN
+        s$ = "/"
+    ELSE
+        EXIT FUNCTION
+    END IF
+
+    v1$ = LEFT$(v$, INSTR(v$, s$) - 1)
+    v2$ = MID$(v$, INSTR(v$, s$) + 1)
+    SELECT CASE s$
+        CASE "+"
+            temp$ = STR$(GetVal(v1$) + GetVal(v2$))
+        CASE "-"
+            temp$ = STR$(GetVal(v1$) - GetVal(v2$))
+        CASE "*"
+            temp$ = STR$(GetVal(v1$) * GetVal(v2$))
+        CASE "/"
+            temp$ = STR$(GetVal(v1$) / GetVal(v2$))
+    END SELECT
+
+    doMath$ = LTRIM$(RTRIM$(temp$))
 END FUNCTION
