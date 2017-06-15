@@ -596,7 +596,7 @@ FUNCTION searchVar~& (__varName$)
 
     IF bracket1 > 0 AND bracket2 > 0 THEN
         'array or function
-        temp## = VAL(doMath(MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1)))
+        temp## = GetVal(MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1))
         SELECT CASE LCASE$(LTRIM$(RTRIM$(LEFT$(varName$, INSTR(varName$, "(") - 1))))
             CASE "cos"
                 temp## = COS(temp##)
