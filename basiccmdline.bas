@@ -38,6 +38,9 @@ IF _FILEEXISTS(COMMAND$) THEN
 END IF
 
 'internal variables (functions)
+varIndex = addVar("int"): vars(varIndex).protected = true
+varIndex = addVar("cos"): vars(varIndex).protected = true
+varIndex = addVar("sin"): vars(varIndex).protected = true
 varIndex = addVar("rnd"): vars(varIndex).protected = true
 varIndex = addVar("timer"): vars(varIndex).protected = true
 varIndex = addVar("time$"): vars(varIndex).protected = true
@@ -214,10 +217,14 @@ DO
         ELSE
             WIDTH GetVal(p$)
         END IF
-    ELSEIF LEFT$(L$, 10) = "RANDOMIZE " AND GetVal(MID$(L$, 11)) > 0 THEN
-        RANDOMIZE GetVal(MID$(L$, 11))
-    ELSEIF LEFT$(L$, 7) = "_LIMIT " AND GetVal(MID$(L$, 8)) > 0 THEN
-        externalLimit = GetVal(MID$(L$, 8))
+    ELSEIF LEFT$(L$, 10) = "RANDOMIZE " THEN
+        IF GetVal(MID$(L$, 11)) > 0 THEN
+            RANDOMIZE GetVal(MID$(L$, 11))
+        END IF
+    ELSEIF LEFT$(L$, 7) = "_LIMIT " THEN
+        IF GetVal(MID$(L$, 8)) > 0 THEN
+            externalLimit = GetVal(MID$(L$, 8))
+        END IF
     ELSEIF LEFT$(L$, 1) = "'" OR LEFT$(L$, 4) = "REM " OR L$ = "'" OR L$ = "REM" OR L$ = "" THEN
         'it's a comment.
     ELSEIF L$ = "KEY OFF" THEN
@@ -292,8 +299,10 @@ DO
         Circ.Done: Rad% = 0: Arc% = 0: Elipse = 0: c$ = "": DrawClr% = 0: GOTO Parse.Done
     ELSEIF L$ = "SLEEP" THEN
         SLEEP
-    ELSEIF LEFT$(L$, 6) = "SLEEP " AND GetVal(MID$(L$, 7)) > 0 THEN
-        SLEEP GetVal(MID$(L$, 7))
+    ELSEIF LEFT$(L$, 6) = "SLEEP " THEN
+        IF GetVal(MID$(L$, 7)) > 0 THEN
+            SLEEP GetVal(MID$(L$, 7))
+        END IF
     ELSEIF LEFT$(L$, 6) = "PRINT " THEN
         DIM retainCursor AS _BYTE
         IF RIGHT$(L$, 1) = ";" THEN
@@ -324,8 +333,7 @@ DO
                 IF NOT retainCursor THEN PRINT
             ELSE
                 DIM t$
-                t$ = doMath(MID$(L1$, 7))
-                IF LEN(t$) THEN PRINT t$; ELSE PRINT GetVal(MID$(L1$, 7));
+                PRINT doMath(MID$(L1$, 7));
                 IF NOT retainCursor THEN PRINT
             END IF
         END IF
@@ -441,7 +449,7 @@ DO
                     IF GetVal(i1$) < GetVal(i2$) THEN r = true
             END SELECT
 
-            IF NOT r THEN
+            IF r = false THEN
                 DO
                     currentLine = currentLine + 1
                     IF currentLine > UBOUND(program) THEN PRINT "IF without END IF on line"; ifLine: running = false: GOTO Parse.Done
@@ -482,23 +490,15 @@ DO
                 END IF
             END IF
         ELSE
-            DIM v$, v1$, v2$
+            DIM v$
             v$ = MID$(L1$, INSTR(L1$, "=") + 1)
 
             t$ = doMath(v$)
 
-            IF t$ = "" THEN
-                IF vars(varIndex).type = varTypeINTEGER THEN
-                    nums(varIndex) = INT(GetVal(v$))
-                ELSE
-                    nums(varIndex) = GetVal(v$)
-                END IF
+            IF vars(varIndex).type = varTypeINTEGER THEN
+                nums(varIndex) = INT(VAL(t$))
             ELSE
-                nums(varIndex) = GetVal(t$)
-
-                IF vars(varIndex).type = varTypeINTEGER THEN
-                    nums(varIndex) = INT(nums(varIndex))
-                END IF
+                nums(varIndex) = VAL(t$)
             END IF
         END IF
     ELSE
@@ -581,9 +581,37 @@ FUNCTION addVar~& (varName$)
     addVar~& = totalVars
 END FUNCTION
 
-FUNCTION searchVar~& (varName$)
+FUNCTION searchVar~& (__varName$)
     DIM i AS _UNSIGNED LONG, found AS _BYTE
     DIM temp##, temp$, special AS _BYTE
+    DIM varName$
+
+    varName$ = __varName$
+
+    DIM bracket1 AS LONG, bracket2 AS LONG
+    bracket1 = INSTR(varName$, "(")
+    IF bracket1 > 0 THEN
+        bracket2 = INSTR(bracket1 + 1, varName$, ")")
+    END IF
+
+    IF bracket1 > 0 AND bracket2 > 0 THEN
+        'array or function
+        temp## = VAL(doMath(MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1)))
+        SELECT CASE LCASE$(LTRIM$(RTRIM$(LEFT$(varName$, INSTR(varName$, "(") - 1))))
+            CASE "cos"
+                temp## = COS(temp##)
+                varName$ = "cos"
+                special = true
+            CASE "sin"
+                temp## = SIN(temp##)
+                varName$ = "sin"
+                special = true
+            CASE "sin"
+                temp## = INT(temp##)
+                varName$ = "int"
+                special = true
+        END SELECT
+    END IF
 
     'special cases
     IF LCASE$(LTRIM$(RTRIM$(varName$))) = "rnd" THEN
@@ -660,39 +688,51 @@ FUNCTION load%% (file$)
 END FUNCTION
 
 FUNCTION GetVal## (__c$)
-    DIM c$
+    DIM c$, b1&, b2&, temp##
 
-    IF hasOperator(__c$) THEN
-        c$ = LEFT$(__c$, firstOperator(__c$) - 1)
+    IF debugging THEN PRINT "entering getval(): "; __c$
+
+    c$ = LTRIM$(RTRIM$(__c$))
+
+    IF hasOperator(c$) AND firstOperator(c$) > 1 THEN
+        c$ = LEFT$(c$, firstOperator(c$) - 1)
+        IF debugging THEN PRINT "has operator"
     ELSE
-        c$ = __c$
+        IF debugging THEN PRINT "no operator"
     END IF
 
-    IF VAL(c$) > 0 THEN
+    IF VAL(c$) <> 0 THEN
         GetVal## = VAL(c$)
+        IF debugging THEN PRINT "returning val()"
     ELSE
         varIndex = searchVar(c$)
+        IF debugging THEN PRINT "searching as var: "; c$
         IF varIndex THEN
             IF vars(varIndex).type = varTypeSTRING THEN
                 GetVal## = VAL(strings(varIndex)) 'auto conversion
+                IF debugging THEN PRINT "returning auto converted strings()"
             ELSE
                 GetVal## = nums(varIndex)
+                IF debugging THEN PRINT "returning nums()"
             END IF
         ELSE
             GetVal## = VAL(c$) 'maybe it was 0 anyway...
+            IF debugging THEN PRINT "returning val() anyway"
         END IF
     END IF
 END FUNCTION
 
-FUNCTION doMath$ (v$)
-    DIM v1$, v2$, temp$, continue AS _BYTE
+FUNCTION doMath$ (__v$)
+    DIM v$, v1$, v2$, temp$, continue AS _BYTE
+
+    v$ = __v$
 
     IF debugging THEN PRINT "doing math on "; v$
 
-    IF hasOperator(v$) THEN
+    IF hasOperator(v$) AND firstOperator(v$) > 1 THEN
         s$ = MID$(v$, firstOperator(v$), 1)
     ELSE
-        doMath$ = v$
+        doMath$ = LTRIM$(RTRIM$(STR$(GetVal(v$))))
         EXIT FUNCTION
     END IF
 
@@ -717,7 +757,7 @@ FUNCTION doMath$ (v$)
 
     IF debugging THEN PRINT "temp$="; temp$
 
-    DO WHILE hasOperator(v2$)
+    DO WHILE hasOperator(v2$) AND firstOperator(v2$) > 1
         s$ = MID$(v2$, firstOperator(v2$), 1)
         v2$ = MID$(v2$, firstOperator(v2$) + 1)
         IF debugging THEN PRINT "passing "; temp$ + s$ + v2$
