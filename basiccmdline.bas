@@ -3,8 +3,10 @@ CONST debugging = false
 
 ON ERROR GOTO oops
 
-KEY 2, "LIST"
-KEY 5, "RUN"
+KEY 2, "LIST" + CHR$(13)
+KEY 3, "LOAD "
+KEY 4, "SAVE "
+KEY 5, "RUN" + CHR$(13)
 KEY ON
 
 TYPE vartype
@@ -39,12 +41,15 @@ END IF
 
 'internal variables (functions)
 varIndex = addVar("int"): vars(varIndex).protected = true
+varIndex = addVar("asc"): vars(varIndex).protected = true
 varIndex = addVar("cos"): vars(varIndex).protected = true
 varIndex = addVar("sin"): vars(varIndex).protected = true
+varIndex = addVar("len"): vars(varIndex).protected = true
 varIndex = addVar("rnd"): vars(varIndex).protected = true
 varIndex = addVar("timer"): vars(varIndex).protected = true
 varIndex = addVar("time$"): vars(varIndex).protected = true
 varIndex = addVar("date$"): vars(varIndex).protected = true
+varIndex = addVar("inkey$"): vars(varIndex).protected = true
 varIndex = addVar("_width"): vars(varIndex).protected = true
 varIndex = addVar("_height"): vars(varIndex).protected = true
 varIndex = addVar("_mousex"): vars(varIndex).protected = true
@@ -98,6 +103,8 @@ DO
                     program(i + 1) = program(i)
                 NEXT
                 program(VAL(MID$(L$, 8))) = ""
+                L$ = "EDIT " + MID$(L$, 8)
+                GOTO Edit
             ELSE
                 PRINT "Invalid line number -"; VAL(MID$(L$, 8))
             END IF
@@ -130,6 +137,7 @@ DO
     ELSEIF L$ = "_DISPLAY" THEN
         _DISPLAY
     ELSEIF LEFT$(L$, 5) = "EDIT " AND VAL(MID$(L$, 6)) > 0 THEN
+        Edit:
         IF loaded THEN
             IF VAL(MID$(L$, 6)) = UBOUND(program) + 1 THEN
                 REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
@@ -184,11 +192,38 @@ DO
         ELSE
             PRINT "No program loaded."
         END IF
-    ELSEIF L$ = "LIST" THEN
+    ELSEIF L$ = "LIST" OR L$ = "LIST PAUSE" THEN
         IF loaded THEN
+            DIM maxSpaceBefore AS INTEGER, prevFG AS _UNSIGNED LONG, prevBG AS _UNSIGNED LONG
+            DIM thisLineNum$
+
+            prevFG = _DEFAULTCOLOR
+            prevBG = _BACKGROUNDCOLOR
+
+            maxSpaceBefore = LEN(STR$(UBOUND(program))) + 1
+
+            COLOR , 0
+
             FOR i = 1 TO UBOUND(program)
-                PRINT program(i)
+                thisLineNum$ = STR$(i)
+                thisLineNum$ = SPACE$(maxSpaceBefore - LEN(thisLineNum$) - 1) + thisLineNum$ + " "
+                COLOR 8
+                PRINT thisLineNum$;
+
+                COLOR 7
+                PRINT program(i);
+                IF POS(1) < 80 THEN
+                    PRINT SPACE$(80 - POS(1));
+                END IF
+
+                IF i MOD 20 = 0 AND L$ = "LIST PAUSE" THEN
+                    COLOR 8
+                    PRINT "-- hit a key --"
+                    SLEEP
+                    _KEYCLEAR
+                END IF
             NEXT
+            COLOR prevFG, prevBG
             PRINT "End of file - "; loadedFile$
         ELSE
             PRINT "No program loaded."
@@ -254,6 +289,21 @@ DO
             END IF
         ELSE
             COLOR GetVal(c$)
+        END IF
+    ELSEIF LEFT$(L$, 7) = "LOCATE " THEN
+        c$ = MID$(L$, 8)
+        IF INSTR(c$, ",") THEN
+            c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
+            c2$ = MID$(c$, INSTR(c$, ",") + 1)
+            IF LEN(c1$) > 0 AND LEN(c2$) > 0 THEN
+                LOCATE GetVal(c1$), GetVal(c2$)
+            ELSEIF LEN(c1$) > 0 AND LEN(c2$) = 0 THEN
+                LOCATE GetVal(c1$)
+            ELSEIF LEN(c1$) = 0 AND LEN(c2$) > 0 THEN
+                LOCATE , GetVal(c2$)
+            END IF
+        ELSE
+            LOCATE GetVal(c$)
         END IF
     ELSEIF L$ = "FILES" THEN
         FILES
@@ -596,17 +646,51 @@ FUNCTION searchVar~& (__varName$)
 
     IF bracket1 > 0 AND bracket2 > 0 THEN
         'array or function
-        temp## = GetVal(MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1))
+        temp## = VAL(doMath(MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1)))
+        temp$ = MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1)
         SELECT CASE LCASE$(LTRIM$(RTRIM$(LEFT$(varName$, INSTR(varName$, "(") - 1))))
             CASE "cos"
                 temp## = COS(temp##)
                 varName$ = "cos"
                 special = true
+            CASE "len"
+                temp$ = LTRIM$(RTRIM$(temp$))
+                IF LEFT$(temp$, 1) = CHR$(34) THEN
+                    temp$ = MID$(temp$, 2)
+                    IF RIGHT$(temp$, 1) = CHR$(34) THEN
+                        temp$ = LEFT$(temp$, LEN(temp$) - 1)
+                    END IF
+                    temp## = LEN(temp$)
+                ELSE
+                    'a var?
+                    DIM checkVar AS _UNSIGNED LONG
+                    checkVar = searchVar(temp$)
+                    IF checkVar THEN
+                        IF vars(checkVar).type = varTypeSTRING THEN
+                            temp## = LEN(strings(checkVar))
+                        ELSE
+                            ERROR 5
+                        END IF
+                    ELSE
+                        ERROR 5
+                    END IF
+                END IF
+                varName$ = "len"
+                special = true
+            CASE "asc"
+                IF LEFT$(temp$, 1) = CHR$(34) THEN
+                    temp$ = MID$(temp$, 2)
+                ELSEIF LCASE$(LTRIM$(RTRIM$(temp$))) = "inkey$" THEN
+                    temp$ = INKEY$
+                END IF
+                temp## = ASC(temp$)
+                varName$ = "asc"
+                special = true
             CASE "sin"
                 temp## = SIN(temp##)
                 varName$ = "sin"
                 special = true
-            CASE "sin"
+            CASE "int"
                 temp## = INT(temp##)
                 varName$ = "int"
                 special = true
@@ -622,6 +706,9 @@ FUNCTION searchVar~& (__varName$)
         special = true
     ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "time$" THEN
         temp$ = TIME$
+        special = true
+    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "inkey$" THEN
+        temp$ = INKEY$
         special = true
     ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "date$" THEN
         temp$ = DATE$
