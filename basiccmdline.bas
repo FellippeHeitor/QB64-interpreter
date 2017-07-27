@@ -36,7 +36,18 @@ thisScope$ = "MAIN MODULE"
 
 IF _FILEEXISTS(COMMAND$) THEN
     loaded = load(COMMAND$)
-    IF loaded THEN PRINT "Loaded. - "; COMMAND$
+    IF loaded THEN PRINT "Loaded - "; COMMAND$
+ELSEIF LEN(COMMAND$) > 0 THEN
+    IF LCASE$(RIGHT$(COMMAND$, 4)) <> ".bas" THEN
+        IF _FILEEXISTS(COMMAND$ + ".bas") THEN
+            loaded = load(COMMAND$ + ".bas")
+            IF loaded THEN PRINT "Loaded - "; COMMAND$ + ".bas"
+        ELSE
+            PRINT "File not found - "; COMMAND$ + ".bas"
+        END IF
+    ELSE
+        PRINT "File not found - "; COMMAND$
+    END IF
 END IF
 
 'internal variables (functions)
@@ -57,7 +68,7 @@ varIndex = addVar("_mousey"): vars(varIndex).protected = true
 varIndex = addVar("_mousebutton(1)"): vars(varIndex).protected = true
 varIndex = addVar("_mousebutton(2)"): vars(varIndex).protected = true
 
-SCREEN s%
+SCREEN CurrentSCREEN%
 DO
     k = _KEYHIT
 
@@ -84,159 +95,296 @@ DO
     L$ = UCASE$(L1$)
     IF LEFT$(L$, 5) = "LOAD " THEN
         tryWithExtension:
-        IF _FILEEXISTS(MID$(L1$, 6)) THEN
-            loaded = load(MID$(L1$, 6))
-            IF loaded THEN PRINT "Loaded."
-        ELSE
-            IF RIGHT$(LCASE$(MID$(L1$, 6)), 4) = ".bas" THEN
-                PRINT "File not found - "; MID$(L1$, 6)
+        IF NOT running THEN
+            IF _FILEEXISTS(MID$(L1$, 6)) THEN
+                loaded = load(MID$(L1$, 6))
+                IF loaded THEN PRINT "Loaded."
             ELSE
-                L1$ = L1$ + ".bas"
+                IF RIGHT$(LCASE$(MID$(L1$, 6)), 4) = ".bas" THEN
+                    PRINT "File not found - "; MID$(L1$, 6)
+                ELSE
+                    L1$ = L1$ + ".bas"
+                    GOTO tryWithExtension
+                END IF
+            END IF
+        END IF
+    ELSEIF L$ = "RELOAD" THEN
+        IF NOT running THEN
+            IF loaded THEN
+                L1$ = "LOAD " + loadedFile$
                 GOTO tryWithExtension
+            ELSE
+                PRINT "No program loaded."
             END IF
         END IF
     ELSEIF LEFT$(L$, 7) = "INSERT " AND VAL(MID$(L$, 8)) > 0 THEN
-        IF loaded THEN
-            IF VAL(MID$(L$, 8)) <= UBOUND(program) THEN
-                REDIM _PRESERVE program(UBOUND(program) + 1)
-                FOR i = UBOUND(program) - 1 TO VAL(MID$(L$, 8)) STEP -1
-                    program(i + 1) = program(i)
-                NEXT
-                program(VAL(MID$(L$, 8))) = ""
-                L$ = "EDIT " + MID$(L$, 8)
-                GOTO Edit
+        IF NOT running THEN
+            IF loaded THEN
+                IF VAL(MID$(L$, 8)) <= UBOUND(program) THEN
+                    REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
+                    FOR i = UBOUND(program) - 1 TO VAL(MID$(L$, 8)) STEP -1
+                        program(i + 1) = program(i)
+                    NEXT
+                    program(VAL(MID$(L$, 8))) = ""
+                    L$ = "EDIT " + MID$(L$, 8)
+                    GOTO Edit
+                ELSE
+                    PRINT "Invalid line number -"; VAL(MID$(L$, 8))
+                END IF
             ELSE
-                PRINT "Invalid line number -"; VAL(MID$(L$, 8))
+                PRINT "No program loaded."
             END IF
-        ELSE
-            PRINT "No program loaded."
         END IF
-    ELSEIF L$ = "SAVE" OR LEFT$(L$, 5) = "SAVE " THEN
-        IF LEN(L$) > 4 THEN loadedFile$ = MID$(L$, 6)
+    ELSEIF LEFT$(L$, 6) = "CHDIR " THEN
+        CHDIR MID$(L1$, 7)
+    ELSEIF LEFT$(L$, 6) = "MKDIR " THEN
+        MKDIR MID$(L1$, 7)
+    ELSEIF LEFT$(L$, 5) = "KILL " THEN
+        KILL MID$(L1$, 6)
+    ELSEIF LEFT$(L$, 7) = "DELETE " AND VAL(MID$(L$, 8)) > 0 THEN
+        IF NOT running THEN
+            IF loaded THEN
+                IF INSTR(MID$(L$, 8), "-") = 0 THEN
+                    IF VAL(MID$(L$, 8)) <= UBOUND(program) THEN
+                        FOR i = VAL(MID$(L$, 8)) + 1 TO UBOUND(program)
+                            program(i - 1) = program(i)
+                        NEXT
+                        REDIM _PRESERVE program(UBOUND(program) - 1) AS STRING
+                    ELSE
+                        PRINT "Invalid line number -"; VAL(MID$(L$, 8))
+                    END IF
+                ELSE
+                    'interval
+                    DIM lower AS _UNSIGNED LONG, upper AS _UNSIGNED LONG
+                    DIM interval$
+                    interval$ = MID$(L$, 8)
+                    lower = VAL(LEFT$(interval$, INSTR(interval$, "-") - 1))
+                    upper = VAL(MID$(interval$, INSTR(interval$, "-") + 1))
+                    IF lower > upper THEN SWAP lower, upper
 
-        IF loaded THEN
-            IF loadedFile$ = "" THEN
-                PRINT "You must specify a file name."
+                    IF lower < 1 OR upper > UBOUND(program) THEN
+                        PRINT "Invalid interval ("; LTRIM$(RTRIM$(interval$)); ")"
+                    ELSE
+                        FOR i = upper + 1 TO UBOUND(program)
+                            program(lower + (i - (upper + 1))) = program(i)
+                        NEXT
+                        REDIM _PRESERVE program(UBOUND(program) - (upper - lower) - 1) AS STRING
+                    END IF
+                END IF
             ELSE
-                DIM ff AS INTEGER
-                ff = FREEFILE
-                OPEN loadedFile$ FOR OUTPUT AS ff
-                FOR i = 1 TO UBOUND(program)
-                    PRINT #ff, program(i)
-                NEXT
-                CLOSE ff
-                PRINT "Saved - "; loadedFile$
+                PRINT "No program loaded."
             END IF
-        ELSE
-            PRINT "No program loaded."
+        END IF
+    ELSEIF L$ = "SAVE" THEN
+        IF NOT running THEN
+            IF loaded THEN
+                IF loadedFile$ = "" THEN
+                    PRINT "Missing: file name."
+                ELSE
+                    DIM ff AS INTEGER
+                    ff = FREEFILE
+                    OPEN loadedFile$ FOR OUTPUT AS ff
+                    FOR i = 1 TO UBOUND(program)
+                        PRINT #ff, program(i)
+                    NEXT
+                    CLOSE ff
+                    PRINT "Saved - "; loadedFile$
+                END IF
+            ELSE
+                PRINT "No program loaded."
+            END IF
+        END IF
+    ELSEIF LEFT$(L$, 5) = "SAVE " THEN
+        IF NOT running THEN
+            saveFile$ = UCASE$(LTRIM$(RTRIM$(MID$(L$, 6))))
+            IF loaded THEN
+                IF saveFile$ <> loadedFile$ THEN
+                    IF _FILEEXISTS(saveFile$) THEN
+                        INPUT "Overwrite (y/N)?", q$1
+                        IF LCASE$(q$1) = "y" THEN
+                            GOTO overWrite
+                        END IF
+                    ELSE
+                        GOTO overWrite
+                    END IF
+                ELSE
+                    overWrite:
+                    ff = FREEFILE
+                    OPEN saveFile$ FOR OUTPUT AS ff
+                    FOR i = 1 TO UBOUND(program)
+                        PRINT #ff, program(i)
+                    NEXT
+                    CLOSE ff
+                    loadedFile$ = saveFile$
+                    PRINT "Saved - "; loadedFile$
+                END IF
+            ELSE
+                PRINT "No program loaded."
+            END IF
         END IF
     ELSEIF L$ = "NEW" OR LEFT$(L$, 4) = "NEW " THEN
-        IF LEN(L$) > 3 THEN loadedFile$ = MID$(L$, 5)
-        loaded = true
-        REDIM SHARED program(1) AS STRING
+        IF NOT running THEN
+            IF LEN(L$) > 3 THEN loadedFile$ = MID$(L$, 5) ELSE loadedFile$ = ""
+            loaded = true
+            REDIM SHARED program(1) AS STRING
+        END IF
     ELSEIF L$ = "_DISPLAY" THEN
         _DISPLAY
     ELSEIF LEFT$(L$, 5) = "EDIT " AND VAL(MID$(L$, 6)) > 0 THEN
-        Edit:
-        IF loaded THEN
-            IF VAL(MID$(L$, 6)) = UBOUND(program) + 1 THEN
-                REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
-                'EDIT can be used to increase program size without the need for INSERT
-            END IF
-
-            IF VAL(MID$(L$, 6)) <= UBOUND(program) THEN
-                DIM row AS INTEGER, col AS INTEGER
-                row = CSRLIN: col = POS(1)
-                PRINT LEFT$(program(VAL(MID$(L$, 6))), 80);
-                DO
-                    LOCATE row, col, 1
-                    k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
-                    SELECT CASE k$
-                        CASE CHR$(13)
-                            DIM p$
-                            p$ = ""
-                            FOR i = 1 TO 80
-                                p$ = p$ + CHR$(SCREEN(row, i))
-                            NEXT
-                            program(VAL(MID$(L$, 6))) = RTRIM$(p$)
-                            EXIT DO
-                        CASE CHR$(27)
-                            EXIT DO
-                        CASE CHR$(8)
-                            IF col > 1 THEN
-                                FOR i = col TO 80
-                                    LOCATE row, i - 1
-                                    PRINT CHR$(SCREEN(row, i));
-                                NEXT
-                                col = col - 1
-                            END IF
-                        CASE CHR$(0) + CHR$(83)
-                            FOR i = col TO 79
-                                LOCATE row, i
-                                PRINT CHR$(SCREEN(row, i + 1));
-                            NEXT
-                        CASE CHR$(0) + CHR$(75)
-                            IF col > 1 THEN col = col - 1
-                        CASE CHR$(0) + CHR$(77)
-                            IF col < 80 THEN col = col + 1
-                        CASE ELSE
-                            PRINT k$;
-                            IF col < 80 THEN col = col + 1
-                    END SELECT
-                LOOP
-                PRINT
-                LOCATE , , 0
-            ELSE
-                PRINT "Invalid line number -"; VAL(MID$(L$, 6))
-            END IF
-        ELSE
-            PRINT "No program loaded."
-        END IF
-    ELSEIF L$ = "LIST" OR L$ = "LIST PAUSE" THEN
-        IF loaded THEN
-            DIM maxSpaceBefore AS INTEGER, prevFG AS _UNSIGNED LONG, prevBG AS _UNSIGNED LONG
-            DIM thisLineNum$
-
-            prevFG = _DEFAULTCOLOR
-            prevBG = _BACKGROUNDCOLOR
-
-            maxSpaceBefore = LEN(STR$(UBOUND(program))) + 1
-
-            COLOR , 0
-
-            FOR i = 1 TO UBOUND(program)
-                thisLineNum$ = STR$(i)
-                thisLineNum$ = SPACE$(maxSpaceBefore - LEN(thisLineNum$) - 1) + thisLineNum$ + " "
-                COLOR 8
-                PRINT thisLineNum$;
-
-                COLOR 7
-                PRINT program(i);
-                IF POS(1) < 80 THEN
-                    PRINT SPACE$(80 - POS(1));
+        IF NOT running THEN
+            Edit:
+            IF loaded THEN
+                IF VAL(MID$(L$, 6)) = UBOUND(program) + 1 THEN
+                    REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
+                    'EDIT can be used to increase program size without the need for INSERT
                 END IF
 
-                IF i MOD 20 = 0 AND L$ = "LIST PAUSE" THEN
-                    COLOR 8
-                    PRINT "-- hit a key --"
-                    SLEEP
-                    _KEYCLEAR
+                IF VAL(MID$(L$, 6)) <= UBOUND(program) THEN
+                    DIM row AS INTEGER, col AS INTEGER
+                    row = CSRLIN: col = POS(1)
+                    PRINT LEFT$(program(VAL(MID$(L$, 6))), 80);
+                    DO
+                        LOCATE row, col, 1
+                        k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
+                        SELECT CASE k$
+                            CASE CHR$(13)
+                                DIM p$
+                                p$ = ""
+                                FOR i = 1 TO 80
+                                    p$ = p$ + CHR$(SCREEN(row, i))
+                                NEXT
+                                program(VAL(MID$(L$, 6))) = RTRIM$(p$)
+                                EXIT DO
+                            CASE CHR$(27)
+                                EXIT DO
+                            CASE CHR$(8)
+                                IF col > 1 THEN
+                                    FOR i = col TO 80
+                                        LOCATE row, i - 1
+                                        PRINT CHR$(SCREEN(row, i));
+                                    NEXT
+                                    col = col - 1
+                                END IF
+                            CASE CHR$(0) + CHR$(83)
+                                FOR i = col TO 79
+                                    LOCATE row, i
+                                    PRINT CHR$(SCREEN(row, i + 1));
+                                NEXT
+                            CASE CHR$(0) + CHR$(75)
+                                IF col > 1 THEN col = col - 1
+                            CASE CHR$(0) + CHR$(77)
+                                IF col < 80 THEN col = col + 1
+                            CASE ELSE
+                                PRINT k$;
+                                IF col < 80 THEN col = col + 1
+                        END SELECT
+                    LOOP
+                    PRINT
+                    LOCATE , , 0
+                ELSE
+                    PRINT "Invalid line number -"; VAL(MID$(L$, 6))
+                END IF
+            ELSE
+                PRINT "No program loaded."
+            END IF
+        END IF
+    ELSEIF L$ = "LIST VARIABLES" THEN
+        IF NOT running THEN
+            DIM j AS _UNSIGNED LONG
+            j = 0
+            FOR i = 1 TO totalVars
+                IF NOT vars(i).protected THEN
+                    j = j + 1
+                    PRINT RTRIM$(vars(i).name); "=";
+                    IF vars(i).type = varTypeSTRING THEN
+                        PRINT strings(i)
+                    ELSE
+                        PRINT nums(i)
+                    END IF
+
+                    IF j MOD 20 = 0 AND i < totalVars THEN
+                        PRINT "-- hit a key --"
+                        k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
+                        IF k$ = CHR$(3) THEN
+                            PRINT "Break."
+                            GOTO ListEnd
+                        END IF
+                        _KEYCLEAR
+                    END IF
                 END IF
             NEXT
-            COLOR prevFG, prevBG
-            PRINT "End of file - "; loadedFile$
-        ELSE
-            PRINT "No program loaded."
+        END IF
+    ELSEIF L$ = "LIST" OR L$ = "LIST PAUSE" THEN
+        IF NOT running THEN
+            IF loaded THEN
+                DIM maxSpaceBefore AS INTEGER, prevFG AS _UNSIGNED LONG, prevBG AS _UNSIGNED LONG
+                DIM thisLineNum$, screenMaxCols AS INTEGER
+
+                prevFG = _DEFAULTCOLOR
+                prevBG = _BACKGROUNDCOLOR
+
+                IF _PIXELSIZE = 0 THEN
+                    screenMaxCols = _WIDTH
+                ELSE
+                    screenMaxCols = _WIDTH / _PRINTWIDTH("W")
+                END IF
+
+                maxSpaceBefore = LEN(STR$(UBOUND(program))) + 1
+
+                MyBad = true
+                COLOR , 0
+                MyBad = false
+
+                FOR i = 1 TO UBOUND(program)
+                    thisLineNum$ = STR$(i)
+                    thisLineNum$ = SPACE$(maxSpaceBefore - LEN(thisLineNum$) - 1) + thisLineNum$ + " "
+                    MyBad = true
+                    COLOR 8
+                    MyBad = false
+                    PRINT thisLineNum$;
+
+                    MyBad = true
+                    COLOR 7
+                    MyBad = false
+                    PRINT program(i);
+
+                    IF POS(1) < screenMaxCols THEN
+                        PRINT SPACE$((screenMaxCols + 1) - POS(1));
+                    END IF
+
+                    IF i MOD 20 = 0 AND L$ = "LIST PAUSE" THEN
+                        MyBad = true
+                        COLOR 8
+                        MyBad = false
+
+                        PRINT "-- hit a key --"
+                        k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
+                        IF k$ = CHR$(3) THEN
+                            COLOR prevFG, prevBG
+                            PRINT "Break."
+                            GOTO ListEnd
+                        END IF
+                        _KEYCLEAR
+                    END IF
+                NEXT
+                COLOR prevFG, prevBG
+                PRINT "End of file - "; loadedFile$
+                ListEnd:
+            ELSE
+                PRINT "No program loaded."
+            END IF
         END IF
     ELSEIF LEFT$(L$, 5) = "LIST " AND VAL(MID$(L$, 6)) > 0 THEN
-        IF loaded THEN
-            IF VAL(MID$(L$, 6)) <= UBOUND(program) THEN
-                PRINT program(VAL(MID$(L$, 6)))
+        IF NOT running THEN
+            IF loaded THEN
+                IF VAL(MID$(L$, 6)) <= UBOUND(program) THEN
+                    PRINT program(VAL(MID$(L$, 6)))
+                ELSE
+                    PRINT "Invalid line number -"; VAL(MID$(L$, 6))
+                END IF
             ELSE
-                PRINT "Invalid line number -"; VAL(MID$(L$, 6))
+                PRINT "No program loaded."
             END IF
-        ELSE
-            PRINT "No program loaded."
         END IF
     ELSEIF LEFT$(L$, 6) = "WIDTH " THEN
         DIM p1$, p2$
@@ -267,12 +415,14 @@ DO
     ELSEIF L$ = "KEY ON" THEN
         KEY ON
     ELSEIF L$ = "RUN" THEN
-        IF loaded THEN
-            currentLine = 0
-            externalLimit = 0
-            running = true
-        ELSE
-            PRINT "No program loaded."
+        IF NOT running THEN
+            IF loaded THEN
+                currentLine = 0
+                externalLimit = 0
+                running = true
+            ELSE
+                PRINT "No program loaded."
+            END IF
         END IF
     ELSEIF LEFT$(L$, 6) = "COLOR " THEN
         DIM c$, c1$, c2$
@@ -305,10 +455,21 @@ DO
         ELSE
             LOCATE GetVal(c$)
         END IF
+    ELSEIF LEFT$(L$, 6) = "FILES " THEN
+        DIM checkVar AS _UNSIGNED LONG, fileSpec$
+        checkVar = searchVar(MID$(L1$, 7))
+        IF checkVar THEN
+            FILES strings(checkVar)
+        ELSE
+            fileSpec$ = LTRIM$(RTRIM$(MID$(L1$, 7)))
+            IF LEFT$(fileSpec$, 1) = CHR$(34) THEN fileSpec$ = MID$(fileSpec$, 2)
+            IF RIGHT$(fileSpec$, 1) = CHR$(34) THEN fileSpec$ = LEFT$(fileSpec$, LEN(fileSpec$) - 1)
+            FILES fileSpec$
+        END IF
     ELSEIF L$ = "FILES" THEN
         FILES
     ELSEIF LEFT$(L$, 8) = "CIRCLE (" THEN
-        IF s% = 0 THEN PRINT "Invalid mode.": running = false: GOTO Parse.Done
+        IF CurrentSCREEN% = 0 THEN PRINT "Invalid mode.": running = false: GOTO Parse.Done
         Comma1% = INSTR(L$, ","): Comma2% = INSTR(Comma1% + 1, L$, ","): Comma3% = INSTR(Comma2% + 1, L$, ",")
 
         XPos1% = INSTR(L$, " (") + 2
@@ -428,34 +589,37 @@ DO
             nums(varIndex) = d##
         END IF
     ELSEIF L$ = "DO" THEN
-        doLine = currentLine
+        IF running THEN doLine = currentLine
     ELSEIF L$ = "LOOP" THEN
-        loopLine = currentLine
-        IF doLine > 0 THEN currentLine = doLine
+        IF running THEN
+            loopLine = currentLine
+            IF doLine > 0 THEN currentLine = doLine
+        END IF
     ELSEIF L$ = "EXIT DO" THEN
-        IF loopLine > 0 THEN
-            currentLine = loopLine
-        ELSE
-            DO
-                currentLine = currentLine + 1
-                IF currentLine > UBOUND(program) THEN PRINT "DO without LOOP on line"; doLine: running = false: GOTO Parse.Done
-                L1$ = program(currentLine)
-                L1$ = LTRIM$(RTRIM$(L1$))
-                L$ = UCASE$(L1$)
-                IF L$ = "LOOP" THEN doLine = 0: EXIT DO
-            LOOP
+        IF running THEN
+            IF loopLine > 0 THEN
+                currentLine = loopLine
+            ELSE
+                DO
+                    currentLine = currentLine + 1
+                    IF currentLine > UBOUND(program) THEN PRINT "DO without LOOP on line"; doLine: running = false: GOTO Parse.Done
+                    L1$ = program(currentLine)
+                    L1$ = LTRIM$(RTRIM$(L1$))
+                    L$ = UCASE$(L1$)
+                    IF L$ = "LOOP" THEN doLine = 0: EXIT DO
+                LOOP
+            END IF
         END IF
     ELSEIF LEFT$(L$, 7) = "SCREEN " THEN
         SELECT CASE VAL(MID$(L$, 8))
             CASE 0 TO 2, 7 TO 13
-                s% = VAL(MID$(L$, 8))
-                SCREEN s%
+                CurrentSCREEN% = VAL(MID$(L$, 8))
+                SCREEN CurrentSCREEN%
             CASE ELSE
                 PRINT "Invalid mode."
         END SELECT
     ELSEIF LEFT$(L$, 6) = "SCREEN" THEN
-        PRINT s%
-
+        PRINT CurrentSCREEN%
     ELSEIF L$ = "END IF" THEN
         IF running THEN
             IF ifLine = 0 THEN
@@ -568,6 +732,8 @@ DO
 LOOP
 
 oops:
+IF MyBad THEN RESUME NEXT
+
 PRINT
 PRINT "("; _ERRORLINE; ") Error #"; ERR;
 IF running THEN
@@ -596,39 +762,43 @@ FUNCTION addVar~& (varName$)
     vars(totalVars).name = varName$
 
     'type detection -----------------------------------------------------------
-    IF RIGHT$(varName$, 1) = "$" THEN vars(totalVars).type = varTypeSTRING
-
-    IF RIGHT$(varName$, 3) = "~%%" THEN
-        vars(totalVars).type = varType_UBYTE
-    ELSEIF RIGHT$(varName$, 2) = "%%" THEN
-        vars(totalVars).type = varType_BYTE
-    ELSEIF RIGHT$(varName$, 2) = "~%" THEN
-        vars(totalVars).type = varType_UINTEGER
-    ELSEIF RIGHT$(varName$, 1) = "%" THEN
-        vars(totalVars).type = varTypeINTEGER
-    END IF
-
-    IF RIGHT$(varName$, 1) = "!" THEN
-        vars(totalVars).type = varTypeSINGLE
-    ELSEIF RIGHT$(varName$, 2) = "##" THEN
-        vars(totalVars).type = varType_FLOAT
-    ELSEIF RIGHT$(varName$, 1) = "#" THEN
-        vars(totalVars).type = varTypeDOUBLE
-    END IF
-
-    IF RIGHT$(varName$, 3) = "~&&" THEN
-        vars(totalVars).type = varType_UINTEGER64
-    ELSEIF RIGHT$(varName$, 2) = "&&" THEN
-        vars(totalVars).type = varType_INTEGER64
-    ELSEIF RIGHT$(varName$, 2) = "~&" THEN
-        vars(totalVars).type = varType_ULONG
-    ELSEIF RIGHT$(varName$, 1) = "&" THEN
-        vars(totalVars).type = varType_LONG
-    END IF
+    vars(totalVars).type = detectType(varName$)
     '--------------------------------------------------------------------------
 
     vars(totalVars).scope = thisScope$
     addVar~& = totalVars
+END FUNCTION
+
+FUNCTION detectType%% (varname$)
+    IF RIGHT$(varname$, 1) = "$" THEN detectType%% = varTypeSTRING
+
+    IF RIGHT$(varname$, 3) = "~%%" THEN
+        detectType%% = varType_UBYTE
+    ELSEIF RIGHT$(varname$, 2) = "%%" THEN
+        detectType%% = varType_BYTE
+    ELSEIF RIGHT$(varname$, 2) = "~%" THEN
+        detectType%% = varType_UINTEGER
+    ELSEIF RIGHT$(varname$, 1) = "%" THEN
+        detectType%% = varTypeINTEGER
+    END IF
+
+    IF RIGHT$(varname$, 1) = "!" THEN
+        detectType%% = varTypeSINGLE
+    ELSEIF RIGHT$(varname$, 2) = "##" THEN
+        detectType%% = varType_FLOAT
+    ELSEIF RIGHT$(varname$, 1) = "#" THEN
+        detectType%% = varTypeDOUBLE
+    END IF
+
+    IF RIGHT$(varname$, 3) = "~&&" THEN
+        detectType%% = varType_UINTEGER64
+    ELSEIF RIGHT$(varname$, 2) = "&&" THEN
+        detectType%% = varType_INTEGER64
+    ELSEIF RIGHT$(varname$, 2) = "~&" THEN
+        detectType%% = varType_ULONG
+    ELSEIF RIGHT$(varname$, 1) = "&" THEN
+        detectType%% = varType_LONG
+    END IF
 END FUNCTION
 
 FUNCTION searchVar~& (__varName$)
@@ -672,7 +842,13 @@ FUNCTION searchVar~& (__varName$)
                             ERROR 5
                         END IF
                     ELSE
-                        ERROR 5
+                        'not found; create it as ""
+                        IF detectType(temp$) = varTypeSTRING THEN
+                            checkVar = addVar(temp$)
+                            temp## = LEN(strings(checkVar))
+                        ELSE
+                            ERROR 5
+                        END IF
                     END IF
                 END IF
                 varName$ = "len"

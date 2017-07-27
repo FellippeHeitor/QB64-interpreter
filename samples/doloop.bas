@@ -1,5 +1,5 @@
-PRINT "Counting to 10:"
 cls
+PRINT "Counting to 10:"
 a = 0
 DO
     a = a + 1
