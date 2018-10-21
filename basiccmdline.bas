@@ -1016,6 +1016,8 @@ FUNCTION doMath$ (__v$)
             temp$ = STR$(GetVal(v1$) * GetVal(v2$))
         CASE "/"
             temp$ = STR$(GetVal(v1$) / GetVal(v2$))
+        CASE "^"
+            temp$ = STR$(GetVal(v1$) ^ GetVal(v2$))
     END SELECT
 
     IF debugging THEN PRINT "temp$="; temp$
@@ -1032,13 +1034,13 @@ FUNCTION doMath$ (__v$)
 END FUNCTION
 
 FUNCTION hasOperator%% (v$)
-    hasOperator%% = INSTR(v$, "+") > 0 OR INSTR(v$, "-") > 0 OR INSTR(v$, "*") > 0 OR INSTR(v$, "/") > 0
+    hasOperator%% = INSTR(v$, "+") > 0 OR INSTR(v$, "-") > 0 OR INSTR(v$, "*") > 0 OR INSTR(v$, "/") > 0 OR INSTR(v$, "^") > 0
 END FUNCTION
 
 FUNCTION firstOperator& (v$)
     DIM i AS LONG, op$
 
-    op$ = "+-*/"
+    op$ = "+-*/^"
 
     FOR i = 1 TO LEN(v$)
         IF INSTR(op$, MID$(v$, i, 1)) THEN
