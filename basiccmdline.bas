@@ -63,6 +63,7 @@ ELSEIF LEN(COMMAND$) > 0 THEN
 END IF
 
 'internal variables (functions)
+varIndex = addVar("val"): vars(varIndex).protected = true
 varIndex = addVar("int"): vars(varIndex).protected = true
 varIndex = addVar("asc"): vars(varIndex).protected = true
 varIndex = addVar("cos"): vars(varIndex).protected = true
@@ -543,10 +544,14 @@ DO
 
         varIndex = searchVar(MID$(L1$, 7))
         IF varIndex THEN
-            IF vars(varIndex).type = varTypeSTRING THEN
-                PRINT strings(varIndex);
+            IF hasOperator(MID$(L1$, 7)) THEN
+                PRINT doMath(MID$(L1$, 7));
             ELSE
-                PRINT nums(varIndex);
+                IF vars(varIndex).type = varTypeSTRING THEN
+                    PRINT strings(varIndex);
+                ELSE
+                    PRINT nums(varIndex);
+                END IF
             END IF
             IF NOT retainCursor THEN PRINT
         ELSE
@@ -825,14 +830,19 @@ END FUNCTION
 FUNCTION searchVar~& (__varName$)
     DIM i AS _UNSIGNED LONG, found AS _BYTE
     DIM temp##, temp$, special AS _BYTE
-    DIM varName$
+    DIM varName$, isString AS _BYTE
 
     varName$ = __varName$
 
     DIM bracket1 AS LONG, bracket2 AS LONG
     bracket1 = INSTR(varName$, "(")
     IF bracket1 > 0 THEN
-        bracket2 = INSTR(bracket1 + 1, varName$, ")")
+        FOR i = LEN(varName$) TO 1 STEP -1
+            IF ASC(varName$, i) = 41 THEN
+                bracket2 = i
+                EXIT FOR
+            END IF
+        NEXT
     END IF
 
     IF bracket1 > 0 AND bracket2 > 0 THEN
@@ -844,6 +854,7 @@ FUNCTION searchVar~& (__varName$)
             IF RIGHT$(temp$, 1) = CHR$(34) THEN
                 temp$ = LEFT$(temp$, LEN(temp$) - 1)
             END IF
+            isString = true
         ELSEIF hasOperator(temp$) THEN
             temp## = VAL(doMath(MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1)))
         ELSE
@@ -853,70 +864,86 @@ FUNCTION searchVar~& (__varName$)
             IF checkVar THEN
                 IF vars(checkVar).type = varTypeSTRING THEN
                     temp$ = strings(checkVar)
+                    isString = true
                 ELSE
                     temp## = nums(checkVar)
+                END IF
+            ELSE
+                'number literal?
+                IF LTRIM$(STR$(VAL(temp$))) = temp$ THEN
+                    temp## = VAL(temp$)
                 END IF
             END IF
         END IF
 
-        SELECT CASE LCASE$(LTRIM$(RTRIM$(LEFT$(varName$, INSTR(varName$, "(") - 1))))
+        SELECT CASE LCASE$(LTRIM$(RTRIM$(LEFT$(varName$, bracket1 - 1))))
+            CASE "val"
+                IF isString = false THEN ERROR 5
+                temp## = VAL(temp$)
+                varName$ = "val"
+                special = true
             CASE "cos"
+                IF isString THEN ERROR 5
                 temp## = COS(temp##)
                 varName$ = "cos"
                 special = true
             CASE "len"
+                IF isString = false THEN ERROR 5
                 temp## = LEN(temp$)
                 varName$ = "len"
                 special = true
             CASE "asc"
+                IF isString = false THEN ERROR 5
                 temp## = ASC(temp$)
                 varName$ = "asc"
                 special = true
             CASE "sin"
+                IF isString THEN ERROR 5
                 temp## = SIN(temp##)
                 varName$ = "sin"
                 special = true
             CASE "int"
+                IF isString THEN ERROR 5
                 temp## = INT(temp##)
                 varName$ = "int"
                 special = true
         END SELECT
-    END IF
-
-    'special cases
-    IF LCASE$(LTRIM$(RTRIM$(varName$))) = "rnd" THEN
-        temp## = RND
-        special = true
-    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "timer" THEN
-        temp## = TIMER
-        special = true
-    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "time$" THEN
-        temp$ = TIME$
-        special = true
-    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "inkey$" THEN
-        temp$ = INKEY$
-        special = true
-    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "date$" THEN
-        temp$ = DATE$
-        special = true
-    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_width" THEN
-        temp## = _WIDTH
-        special = true
-    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_height" THEN
-        temp## = _HEIGHT
-        special = true
-    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousex" THEN
-        temp## = _MOUSEX
-        special = true
-    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousey" THEN
-        temp## = _MOUSEY
-        special = true
-    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousebutton(1)" THEN
-        temp## = _MOUSEBUTTON(1)
-        special = true
-    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousebutton(2)" THEN
-        temp## = _MOUSEBUTTON(2)
-        special = true
+    ELSE
+        'special cases
+        IF LCASE$(LTRIM$(RTRIM$(varName$))) = "rnd" THEN
+            temp## = RND
+            special = true
+        ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "timer" THEN
+            temp## = TIMER
+            special = true
+        ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "time$" THEN
+            temp$ = TIME$
+            special = true
+        ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "inkey$" THEN
+            temp$ = INKEY$
+            special = true
+        ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "date$" THEN
+            temp$ = DATE$
+            special = true
+        ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_width" THEN
+            temp## = _WIDTH
+            special = true
+        ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_height" THEN
+            temp## = _HEIGHT
+            special = true
+        ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousex" THEN
+            temp## = _MOUSEX
+            special = true
+        ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousey" THEN
+            temp## = _MOUSEY
+            special = true
+        ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousebutton(1)" THEN
+            temp## = _MOUSEBUTTON(1)
+            special = true
+        ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousebutton(2)" THEN
+            temp## = _MOUSEBUTTON(2)
+            special = true
+        END IF
     END IF
 
     'check if var exists
@@ -982,8 +1009,8 @@ FUNCTION GetVal## (__c$)
         IF debugging THEN PRINT "searching as var: "; c$
         IF varIndex THEN
             IF vars(varIndex).type = varTypeSTRING THEN
-                GetVal## = VAL(strings(varIndex)) 'auto conversion
-                IF debugging THEN PRINT "returning auto converted strings()"
+                IF debugging THEN PRINT "found in strings()"
+                ERROR 5
             ELSE
                 GetVal## = nums(varIndex)
                 IF debugging THEN PRINT "returning nums()"
