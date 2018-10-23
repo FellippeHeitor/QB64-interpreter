@@ -16,23 +16,35 @@ TYPE vartype
     protected AS _BYTE
 END TYPE
 
-CONST varTypeFLOAT = 0
+CONST varType_FLOAT = 0
 CONST varTypeSTRING = 1
 CONST varTypeINTEGER = 2
+CONST varTypeSINGLE = 3
+CONST varTypeDOUBLE = 4
+CONST varType_UBYTE = 5
+CONST varType_BYTE = 6
+CONST varType_UINTEGER = 7
+CONST varType_UINTEGER64 = 8
+CONST varType_INTEGER64 = 9
+CONST varType_ULONG = 10
+CONST varTypeLONG = 11
+
 
 REDIM SHARED vars(0) AS vartype
 REDIM SHARED strings(0) AS STRING
 REDIM SHARED nums(0) AS _FLOAT
 REDIM SHARED program(0) AS STRING
-DIM SHARED totalVars AS _UNSIGNED LONG
+DIM SHARED totalVars AS _UNSIGNED LONG, varType_DEFAULT AS _BYTE
 DIM SHARED thisScope$, currentLine AS _UNSIGNED LONG
 DIM varIndex AS _UNSIGNED LONG, i AS _UNSIGNED LONG
 DIM doLine AS _UNSIGNED LONG, loopLine AS _UNSIGNED LONG
 DIM ifLine AS _UNSIGNED LONG
 DIM k AS LONG, externalLimit AS INTEGER
 DIM SHARED running AS _BYTE, loaded AS _BYTE, loadedFile$
+DIM SHARED CurrentSCREEN%
 
 thisScope$ = "MAIN MODULE"
+varType_DEFAULT = varTypeSINGLE
 
 IF _FILEEXISTS(COMMAND$) THEN
     loaded = load(COMMAND$)
@@ -295,9 +307,9 @@ DO
             FOR i = 1 TO totalVars
                 IF NOT vars(i).protected THEN
                     j = j + 1
-                    PRINT RTRIM$(vars(i).name); "=";
+                    PRINT RTRIM$(vars(i).name); " = ";
                     IF vars(i).type = varTypeSTRING THEN
-                        PRINT strings(i)
+                        PRINT CHR$(34); strings(i); CHR$(34)
                     ELSE
                         PRINT nums(i)
                     END IF
@@ -514,7 +526,12 @@ DO
         IF GetVal(MID$(L$, 7)) > 0 THEN
             SLEEP GetVal(MID$(L$, 7))
         END IF
-    ELSEIF LEFT$(L$, 6) = "PRINT " THEN
+    ELSEIF L$ = "PRINT" OR L$ = "?" THEN
+        PRINT
+    ELSEIF LEFT$(L$, 6) = "PRINT " OR LEFT$(L$, 1) = "?" THEN
+        IF LEFT$(L$, 2) = "? " THEN L1$ = "PRINT " + MID$(L1$, 3): L$ = L1$
+        IF LEFT$(L$, 1) = "?" THEN L1$ = "PRINT " + MID$(L1$, 2): L$ = L1$
+
         DIM retainCursor AS _BYTE
         IF RIGHT$(L$, 1) = ";" THEN
             retainCursor = true
@@ -524,32 +541,30 @@ DO
             retainCursor = false
         END IF
 
-        q1 = INSTR(7, L1$, CHR$(34))
-        IF q1 THEN
-            q2 = INSTR(q1 + 1, L1$, CHR$(34))
-            IF q2 THEN
-                PRINT MID$(L1$, 8, q2 - q1 - 1);
-                IF NOT retainCursor THEN PRINT
+        varIndex = searchVar(MID$(L1$, 7))
+        IF varIndex THEN
+            IF vars(varIndex).type = varTypeSTRING THEN
+                PRINT strings(varIndex);
             ELSE
-                GOTO syntaxerror
+                PRINT nums(varIndex);
             END IF
+            IF NOT retainCursor THEN PRINT
         ELSE
-            varIndex = searchVar(MID$(L1$, 7))
-            IF varIndex THEN
-                IF vars(varIndex).type = varTypeSTRING THEN
-                    PRINT strings(varIndex);
+            q1 = INSTR(7, L1$, CHR$(34))
+            IF q1 THEN
+                q2 = INSTR(q1 + 1, L1$, CHR$(34))
+                IF q2 THEN
+                    PRINT MID$(L1$, 8, q2 - q1 - 1);
+                    IF NOT retainCursor THEN PRINT
                 ELSE
-                    PRINT nums(varIndex);
+                    PRINT MID$(L1$, 8);
+                    IF NOT retainCursor THEN PRINT
                 END IF
-                IF NOT retainCursor THEN PRINT
             ELSE
-                DIM t$
                 PRINT doMath(MID$(L1$, 7));
                 IF NOT retainCursor THEN PRINT
             END IF
         END IF
-    ELSEIF L$ = "PRINT" THEN
-        PRINT
     ELSEIF LEFT$(L$, 7) = "_TITLE " THEN
         q1 = INSTR(8, L1$, CHR$(34))
         IF q1 THEN
@@ -704,7 +719,7 @@ DO
                 END IF
             END IF
         ELSE
-            DIM v$
+            DIM v$, t$
             v$ = MID$(L1$, INSTR(L1$, "=") + 1)
 
             t$ = doMath(v$)
@@ -769,7 +784,13 @@ FUNCTION addVar~& (varName$)
     addVar~& = totalVars
 END FUNCTION
 
-FUNCTION detectType%% (varname$)
+FUNCTION detectType%% (__varname$)
+    DIM varname$
+
+    varname$ = LTRIM$(RTRIM$(__varname$))
+
+    detectType%% = varType_DEFAULT
+
     IF RIGHT$(varname$, 1) = "$" THEN detectType%% = varTypeSTRING
 
     IF RIGHT$(varname$, 3) = "~%%" THEN
@@ -816,49 +837,38 @@ FUNCTION searchVar~& (__varName$)
 
     IF bracket1 > 0 AND bracket2 > 0 THEN
         'array or function
-        temp## = VAL(doMath(MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1)))
         temp$ = MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1)
+        IF LEFT$(temp$, 1) = CHR$(34) THEN
+            'string literal
+            temp$ = MID$(temp$, 2)
+            IF RIGHT$(temp$, 1) = CHR$(34) THEN
+                temp$ = LEFT$(temp$, LEN(temp$) - 1)
+            END IF
+        ELSEIF hasOperator(temp$) THEN
+            temp## = VAL(doMath(MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1)))
+        ELSE
+            'a variable?
+            DIM checkVar AS _UNSIGNED LONG
+            checkVar = searchVar(temp$)
+            IF checkVar THEN
+                IF vars(checkVar).type = varTypeSTRING THEN
+                    temp$ = strings(checkVar)
+                ELSE
+                    temp## = nums(checkVar)
+                END IF
+            END IF
+        END IF
+
         SELECT CASE LCASE$(LTRIM$(RTRIM$(LEFT$(varName$, INSTR(varName$, "(") - 1))))
             CASE "cos"
                 temp## = COS(temp##)
                 varName$ = "cos"
                 special = true
             CASE "len"
-                temp$ = LTRIM$(RTRIM$(temp$))
-                IF LEFT$(temp$, 1) = CHR$(34) THEN
-                    temp$ = MID$(temp$, 2)
-                    IF RIGHT$(temp$, 1) = CHR$(34) THEN
-                        temp$ = LEFT$(temp$, LEN(temp$) - 1)
-                    END IF
-                    temp## = LEN(temp$)
-                ELSE
-                    'a var?
-                    DIM checkVar AS _UNSIGNED LONG
-                    checkVar = searchVar(temp$)
-                    IF checkVar THEN
-                        IF vars(checkVar).type = varTypeSTRING THEN
-                            temp## = LEN(strings(checkVar))
-                        ELSE
-                            ERROR 5
-                        END IF
-                    ELSE
-                        'not found; create it as ""
-                        IF detectType(temp$) = varTypeSTRING THEN
-                            checkVar = addVar(temp$)
-                            temp## = LEN(strings(checkVar))
-                        ELSE
-                            ERROR 5
-                        END IF
-                    END IF
-                END IF
+                temp## = LEN(temp$)
                 varName$ = "len"
                 special = true
             CASE "asc"
-                IF LEFT$(temp$, 1) = CHR$(34) THEN
-                    temp$ = MID$(temp$, 2)
-                ELSEIF LCASE$(LTRIM$(RTRIM$(temp$))) = "inkey$" THEN
-                    temp$ = INKEY$
-                END IF
                 temp## = ASC(temp$)
                 varName$ = "asc"
                 special = true
