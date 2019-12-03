@@ -73,6 +73,7 @@ varIndex = addVar("rnd"): vars(varIndex).protected = true
 varIndex = addVar("timer"): vars(varIndex).protected = true
 varIndex = addVar("time$"): vars(varIndex).protected = true
 varIndex = addVar("date$"): vars(varIndex).protected = true
+varIndex = addVar("chr$"): vars(varIndex).protected = true
 varIndex = addVar("inkey$"): vars(varIndex).protected = true
 varIndex = addVar("_width"): vars(varIndex).protected = true
 varIndex = addVar("_height"): vars(varIndex).protected = true
@@ -906,6 +907,11 @@ FUNCTION searchVar~& (__varName$)
                 IF isString THEN ERROR 5
                 temp## = INT(temp##)
                 varName$ = "int"
+                special = true
+            CASE "chr$"
+                IF isString THEN ERROR 5
+                temp$ = CHR$(temp##)
+                varName$ = "chr$"
                 special = true
         END SELECT
     ELSE
