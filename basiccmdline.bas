@@ -1,5 +1,10 @@
 CONST true = -1, false = NOT true
-CONST debugging = false
+
+$CONSOLE
+_CONSOLE OFF
+
+DIM SHARED debugging AS _BYTE
+debugging = false
 
 ON ERROR GOTO oops
 
@@ -155,6 +160,14 @@ DO
         MKDIR MID$(L1$, 7)
     ELSEIF LEFT$(L$, 5) = "KILL " THEN
         KILL MID$(L1$, 6)
+    ELSEIF L$ = "DEBUG ON" THEN
+        _CONSOLE ON
+        debugging = true
+        PRINT "Debugging enabled."
+    ELSEIF L$ = "DEBUG OFF" THEN
+        _CONSOLE OFF
+        debugging = false
+        PRINT "Debugging disabled."
     ELSEIF LEFT$(L$, 7) = "DELETE " AND VAL(MID$(L$, 8)) > 0 THEN
         IF NOT running THEN
             IF loaded THEN
@@ -236,6 +249,18 @@ DO
                 PRINT "No program loaded."
             END IF
         END IF
+    ELSEIF L$ = "CLEAR" THEN
+        DIM j AS _UNSIGNED LONG
+        j = 0
+        FOR i = totalVars TO 1 STEP -1
+            IF NOT vars(i).protected THEN
+                totalVars = totalVars - 1
+                vars(i).name = ""
+                vars(i).type = 0
+                strings(i) = ""
+                nums(i) = 0
+            END IF
+        NEXT
     ELSEIF L$ = "NEW" OR LEFT$(L$, 4) = "NEW " THEN
         IF NOT running THEN
             IF LEN(L$) > 3 THEN loadedFile$ = MID$(L$, 5) ELSE loadedFile$ = ""
@@ -304,7 +329,6 @@ DO
         END IF
     ELSEIF L$ = "LIST VARIABLES" THEN
         IF NOT running THEN
-            DIM j AS _UNSIGNED LONG
             j = 0
             FOR i = 1 TO totalVars
                 IF NOT vars(i).protected THEN
@@ -407,20 +431,20 @@ DO
             p1$ = LEFT$(p$, INSTR(p$, ",") - 1)
             p2$ = MID$(p$, INSTR(p$, ",") + 1)
             IF LEN(p1$) = 0 THEN
-                WIDTH , GetVal(p2$)
+                WIDTH , GetVal(p2$, 0, "")
             ELSE
-                WIDTH GetVal(p1$), GetVal(p2$)
+                WIDTH GetVal(p1$, 0, ""), GetVal(p2$, 0, "")
             END IF
         ELSE
-            WIDTH GetVal(p$)
+            WIDTH GetVal(p$, 0, "")
         END IF
     ELSEIF LEFT$(L$, 10) = "RANDOMIZE " THEN
-        IF GetVal(MID$(L$, 11)) > 0 THEN
-            RANDOMIZE GetVal(MID$(L$, 11))
+        IF GetVal(MID$(L$, 11), 0, "") > 0 THEN
+            RANDOMIZE GetVal(MID$(L$, 11), 0, "")
         END IF
     ELSEIF LEFT$(L$, 7) = "_LIMIT " THEN
-        IF GetVal(MID$(L$, 8)) > 0 THEN
-            externalLimit = GetVal(MID$(L$, 8))
+        IF GetVal(MID$(L$, 8), 0, "") > 0 THEN
+            externalLimit = GetVal(MID$(L$, 8), 0, "")
         END IF
     ELSEIF LEFT$(L$, 1) = "'" OR LEFT$(L$, 4) = "REM " OR L$ = "'" OR L$ = "REM" OR L$ = "" THEN
         'it's a comment.
@@ -445,14 +469,14 @@ DO
             c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
             c2$ = MID$(c$, INSTR(c$, ",") + 1)
             IF LEN(c1$) > 0 AND LEN(c2$) > 0 THEN
-                COLOR GetVal(c1$), GetVal(c2$)
+                COLOR GetVal(c1$, 0, ""), GetVal(c2$, 0, "")
             ELSEIF LEN(c1$) > 0 AND LEN(c2$) = 0 THEN
-                COLOR GetVal(c1$)
+                COLOR GetVal(c1$, 0, "")
             ELSEIF LEN(c1$) = 0 AND LEN(c2$) > 0 THEN
-                COLOR , GetVal(c2$)
+                COLOR , GetVal(c2$, 0, "")
             END IF
         ELSE
-            COLOR GetVal(c$)
+            COLOR GetVal(c$, 0, "")
         END IF
     ELSEIF LEFT$(L$, 7) = "LOCATE " THEN
         c$ = MID$(L$, 8)
@@ -460,14 +484,14 @@ DO
             c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
             c2$ = MID$(c$, INSTR(c$, ",") + 1)
             IF LEN(c1$) > 0 AND LEN(c2$) > 0 THEN
-                LOCATE GetVal(c1$), GetVal(c2$)
+                LOCATE GetVal(c1$, 0, ""), GetVal(c2$, 0, "")
             ELSEIF LEN(c1$) > 0 AND LEN(c2$) = 0 THEN
-                LOCATE GetVal(c1$)
+                LOCATE GetVal(c1$, 0, "")
             ELSEIF LEN(c1$) = 0 AND LEN(c2$) > 0 THEN
-                LOCATE , GetVal(c2$)
+                LOCATE , GetVal(c2$, 0, "")
             END IF
         ELSE
-            LOCATE GetVal(c$)
+            LOCATE GetVal(c$, 0, "")
         END IF
     ELSEIF LEFT$(L$, 6) = "FILES " THEN
         DIM checkVar AS _UNSIGNED LONG, fileSpec$
@@ -488,20 +512,20 @@ DO
 
         XPos1% = INSTR(L$, " (") + 2
         YPos1% = Comma1% + 1
-        X1% = GetVal(MID$(L$, XPos1%, Comma1% - XPos1%))
-        Y1% = GetVal(MID$(L$, YPos1%, Comma2% - YPos1% - 1))
+        X1% = GetVal(MID$(L$, XPos1%, Comma1% - XPos1%), 0, "")
+        Y1% = GetVal(MID$(L$, YPos1%, Comma2% - YPos1% - 1), 0, "")
 
-        Rad% = GetVal(MID$(L$, Comma2% + 1, Comma3% - Comma2% - 1))
+        Rad% = GetVal(MID$(L$, Comma2% + 1, Comma3% - Comma2% - 1), 0, "")
 
         c$ = LTRIM$(RTRIM$(LEFT$(MID$(L$, Comma3% + 1), 3))) 'Color attribute (variable or constant)
         IF RIGHT$(c$, 1) = "," THEN c$ = LEFT$(c$, LEN(c$) - 1) 'If single-digit attribute
 
-        IF INSTR("0123456789", LEFT$(c$, 1)) > 0 THEN DrawClr% = VAL(c$) ELSE DrawClr% = GetVal(c$)
+        IF INSTR("0123456789", LEFT$(c$, 1)) > 0 THEN DrawClr% = VAL(c$) ELSE DrawClr% = GetVal(c$, 0, "")
 
         EPos% = INSTR(L$, ", , , ")
 
         IF EPos% > 0 THEN
-            EPos% = EPos% + 6: Elipse = GetVal(MID$(L$, EPos%))
+            EPos% = EPos% + 6: Elipse = GetVal(MID$(L$, EPos%), 0, "")
         ELSE
             Arc% = INSTR(Comma3% + 1, L$, ",")
 
@@ -509,10 +533,10 @@ DO
                 Comma4% = Arc%
                 Comma5% = INSTR(Comma4% + 1, L$, ",")
 
-                ArcBeg = GetVal(MID$(L$, Comma4% + 1, Comma5% - Comma4% - 1)) ': PRINT "ArcBeg:"; ArcBeg;   '* * * * Test PRINT
-                ArcEnd = GetVal(MID$(L$, Comma5% + 1)) ': PRINT " ArcEnd:"; ArcEnd;
+                ArcBeg = GetVal(MID$(L$, Comma4% + 1, Comma5% - Comma4% - 1), 0, "") ': PRINT "ArcBeg:"; ArcBeg;   '* * * * Test PRINT
+                ArcEnd = GetVal(MID$(L$, Comma5% + 1), 0, "") ': PRINT " ArcEnd:"; ArcEnd;
 
-                IF INSTR(Comma5% + 1, L$, ",") > 0 THEN EPos% = INSTR(Comma5% + 1, L$, ",") + 1: Elipse = GetVal(MID$(L$, EPos%))
+                IF INSTR(Comma5% + 1, L$, ",") > 0 THEN EPos% = INSTR(Comma5% + 1, L$, ",") + 1: Elipse = GetVal(MID$(L$, EPos%), 0, "")
             END IF
         END IF
 
@@ -525,8 +549,8 @@ DO
     ELSEIF L$ = "SLEEP" THEN
         SLEEP
     ELSEIF LEFT$(L$, 6) = "SLEEP " THEN
-        IF GetVal(MID$(L$, 7)) > 0 THEN
-            SLEEP GetVal(MID$(L$, 7))
+        IF GetVal(MID$(L$, 7), 0, "") > 0 THEN
+            SLEEP GetVal(MID$(L$, 7), 0, "")
         END IF
     ELSEIF L$ = "PRINT" OR L$ = "?" THEN
         PRINT
@@ -543,34 +567,8 @@ DO
             retainCursor = false
         END IF
 
-        varIndex = searchVar(MID$(L1$, 7))
-        IF varIndex THEN
-            IF hasOperator(MID$(L1$, 7)) THEN
-                PRINT doMath(MID$(L1$, 7));
-            ELSE
-                IF vars(varIndex).type = varTypeSTRING THEN
-                    PRINT strings(varIndex);
-                ELSE
-                    PRINT nums(varIndex);
-                END IF
-            END IF
-            IF NOT retainCursor THEN PRINT
-        ELSE
-            q1 = INSTR(7, L1$, CHR$(34))
-            IF q1 THEN
-                q2 = INSTR(q1 + 1, L1$, CHR$(34))
-                IF q2 THEN
-                    PRINT MID$(L1$, 8, q2 - q1 - 1);
-                    IF NOT retainCursor THEN PRINT
-                ELSE
-                    PRINT MID$(L1$, 8);
-                    IF NOT retainCursor THEN PRINT
-                END IF
-            ELSE
-                PRINT doMath(MID$(L1$, 7));
-                IF NOT retainCursor THEN PRINT
-            END IF
-        END IF
+        PRINT doMath(MID$(L1$, 7));
+        IF NOT retainCursor THEN PRINT
     ELSEIF LEFT$(L$, 7) = "_TITLE " THEN
         q1 = INSTR(8, L1$, CHR$(34))
         IF q1 THEN
@@ -677,11 +675,11 @@ DO
             r = false
             SELECT CASE s$
                 CASE "="
-                    IF GetVal(i1$) = GetVal(i2$) THEN r = true
+                    IF GetVal(i1$, 0, "") = GetVal(i2$, 0, "") THEN r = true
                 CASE ">"
-                    IF GetVal(i1$) > GetVal(i2$) THEN r = true
+                    IF GetVal(i1$, 0, "") > GetVal(i2$, 0, "") THEN r = true
                 CASE "<"
-                    IF GetVal(i1$) < GetVal(i2$) THEN r = true
+                    IF GetVal(i1$, 0, "") < GetVal(i2$, 0, "") THEN r = true
             END SELECT
 
             IF r = false THEN
@@ -712,20 +710,11 @@ DO
             GOTO Parse.Done
         END IF
 
+        DIM v$, t$
         IF vars(varIndex).type = varTypeSTRING THEN
-            strings(varIndex) = RTRIM$(LTRIM$(MID$(L1$, INSTR(L1$, "=") + 1)))
-            IF LEFT$(strings(varIndex), 1) = CHR$(34) THEN
-                strings(varIndex) = MID$(strings(varIndex), 2)
-                IF RIGHT$(strings(varIndex), 1) = CHR$(34) THEN strings(varIndex) = LEFT$(strings(varIndex), LEN(strings(varIndex)) - 1)
-            ELSE
-                DIM varIndex2 AS _UNSIGNED LONG
-                varIndex2 = searchVar(strings(varIndex))
-                IF varIndex2 THEN
-                    strings(varIndex) = strings(varIndex2)
-                END IF
-            END IF
+            v$ = RTRIM$(LTRIM$(MID$(L1$, INSTR(L1$, "=") + 1)))
+            strings(varIndex) = doMath(v$)
         ELSE
-            DIM v$, t$
             v$ = MID$(L1$, INSTR(L1$, "=") + 1)
 
             t$ = doMath(v$)
@@ -856,7 +845,7 @@ FUNCTION searchVar~& (__varName$)
                 temp$ = LEFT$(temp$, LEN(temp$) - 1)
             END IF
             isString = true
-        ELSEIF hasOperator(temp$) THEN
+        ELSEIF firstOperator(temp$) THEN
             temp## = VAL(doMath(MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1)))
         ELSE
             'a variable?
@@ -993,102 +982,177 @@ FUNCTION load%% (file$)
     END IF
 END FUNCTION
 
-FUNCTION GetVal## (__c$)
+FUNCTION removeQuote$ (__text$)
+    DIM text$
+
+    text$ = __text$
+
+    IF LEFT$(text$, 1) = CHR$(34) THEN
+        text$ = MID$(text$, 2)
+    END IF
+
+    IF RIGHT$(text$, 1) = CHR$(34) THEN
+        text$ = LEFT$(text$, LEN(text$) - 1)
+    END IF
+
+    removeQuote$ = text$
+END FUNCTION
+
+FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
     DIM c$, b1&, b2&, temp##
 
-    IF debugging THEN PRINT "entering getval(): "; __c$
+    IF debugging THEN _ECHO "entering getval(): " + __c$
 
     c$ = LTRIM$(RTRIM$(__c$))
 
-    IF hasOperator(c$) AND firstOperator(c$) > 1 THEN
+    IF LEFT$(c$, 1) = CHR$(34) THEN
+        IF debugging THEN _ECHO "literal string"
+        foundAsText = true
+        textReturn$ = removeQuote$(c$)
+        EXIT FUNCTION
+    END IF
+
+    IF firstOperator(c$) > 1 THEN
         c$ = LEFT$(c$, firstOperator(c$) - 1)
-        IF debugging THEN PRINT "has operator"
+        IF debugging THEN _ECHO "has operator"
     ELSE
-        IF debugging THEN PRINT "no operator"
+        IF debugging THEN _ECHO "no operator"
     END IF
 
     IF VAL(c$) <> 0 THEN
         GetVal## = VAL(c$)
-        IF debugging THEN PRINT "returning val()"
+        IF debugging THEN _ECHO "returning val()"
     ELSE
         varIndex = searchVar(c$)
-        IF debugging THEN PRINT "searching as var: "; c$
+        IF debugging THEN _ECHO "searching as var: " + c$
         IF varIndex THEN
             IF vars(varIndex).type = varTypeSTRING THEN
-                IF debugging THEN PRINT "found in strings()"
-                ERROR 5
+                IF debugging THEN _ECHO "found in strings()"
+                foundAsText = true
+                textReturn$ = strings(varIndex)
             ELSE
                 GetVal## = nums(varIndex)
-                IF debugging THEN PRINT "returning nums()"
+                IF debugging THEN _ECHO "returning nums()"
             END IF
         ELSE
-            GetVal## = VAL(c$) 'maybe it was 0 anyway...
-            IF debugging THEN PRINT "returning val() anyway"
+            IF debugging THEN _ECHO "not found as var"
+            IF detectType%%(c$) = varTypeSTRING THEN
+                foundAsText = true
+                textReturn$ = ""
+                IF debugging THEN _ECHO "returning an empty string"
+            ELSE
+                GetVal## = VAL(c$)
+                IF debugging THEN _ECHO "returning val() anyway"
+            END IF
         END IF
     END IF
 END FUNCTION
 
 FUNCTION doMath$ (__v$)
     DIM v$, v1$, v2$, temp$, continue AS _BYTE
+    DIM v1##, v2##
+    DIM returnAsText AS _BYTE, textReturn$
+    DIM returnAsText2 AS _BYTE, textReturn2$
+    DIM tempQuote$
 
     v$ = __v$
 
-    IF debugging THEN PRINT "doing math on "; v$
+    IF debugging THEN _ECHO "------------------ doing math on " + v$
 
-    IF hasOperator(v$) AND firstOperator(v$) > 1 THEN
+    IF firstOperator(v$) > 1 THEN
         s$ = MID$(v$, firstOperator(v$), 1)
+        IF debugging THEN _ECHO "found operator: " + s$
     ELSE
-        doMath$ = LTRIM$(RTRIM$(STR$(GetVal(v$))))
+        v1## = GetVal(v$, returnAsText, textReturn$)
+        IF returnAsText THEN
+            doMath$ = textReturn$
+        ELSE
+            doMath$ = LTRIM$(RTRIM$(STR$(GetVal(v$, 0, ""))))
+        END IF
         EXIT FUNCTION
     END IF
 
     v1$ = LEFT$(v$, INSTR(v$, s$) - 1)
     v2$ = MID$(v$, firstOperator(v$) + 1)
 
+    v1## = GetVal(v1$, returnAsText, textReturn$)
+    v2## = GetVal(v2$, returnAsText2, textReturn2$)
     IF debugging THEN
-        PRINT "found    "; v1$, s$, v2$
-        PRINT "getval():"; GetVal(v1$), GetVal(v2$)
+        _ECHO "found    " + v1$ + " " + s$ + " " + v2$
+        _ECHO "getval():" + STR$(v1##) + "," + STR$(v2##)
+        IF returnAsText THEN _ECHO "getval(): v1$ as text = " + textReturn$
+        IF returnAsText2 THEN _ECHO "getval(): v2$ as text = " + textReturn2$
     END IF
 
     SELECT CASE s$
         CASE "+"
-            temp$ = STR$(GetVal(v1$) + GetVal(v2$))
+            IF returnAsText THEN
+                temp$ = textReturn$ + textReturn2$
+            ELSE
+                temp$ = STR$(v1## + v2##)
+            END IF
         CASE "-"
-            temp$ = STR$(GetVal(v1$) - GetVal(v2$))
+            IF returnAsText OR returnAsText2 THEN ERROR 5
+            temp$ = STR$(v1## - v2##)
         CASE "*"
-            temp$ = STR$(GetVal(v1$) * GetVal(v2$))
+            IF returnAsText OR returnAsText2 THEN ERROR 5
+            temp$ = STR$(v1## * v2##)
         CASE "/"
-            temp$ = STR$(GetVal(v1$) / GetVal(v2$))
+            IF returnAsText OR returnAsText2 THEN ERROR 5
+            temp$ = STR$(v1## / v2##)
         CASE "^"
-            temp$ = STR$(GetVal(v1$) ^ GetVal(v2$))
+            IF returnAsText OR returnAsText2 THEN ERROR 5
+            temp$ = STR$(v1## ^ v2##)
+        CASE "="
+            IF returnAsText OR returnAsText2 THEN
+                temp$ = STR$(textReturn$ = textReturn2$)
+            ELSE
+                temp$ = STR$(v1## = v2##)
+            END IF
     END SELECT
 
-    IF debugging THEN PRINT "temp$="; temp$
+    IF debugging THEN _ECHO "temp$=" + temp$
 
-    DO WHILE hasOperator(v2$) AND firstOperator(v2$) > 1
+    DO WHILE firstOperator(v2$) > 1
         s$ = MID$(v2$, firstOperator(v2$), 1)
         v2$ = MID$(v2$, firstOperator(v2$) + 1)
-        IF debugging THEN PRINT "passing "; temp$ + s$ + v2$
-        temp$ = doMath$(temp$ + s$ + v2$)
+        IF debugging THEN _ECHO "passing " + temp$ + s$ + v2$
+        IF returnAsText THEN tempQuote$ = CHR$(34) ELSE tempQuote$ = ""
+        temp$ = doMath$(tempQuote$ + temp$ + tempQuote$ + s$ + v2$)
         v2$ = MID$(v2$, firstOperator(v2$) + LEN(v2$))
     LOOP
 
     doMath$ = LTRIM$(RTRIM$(temp$))
 END FUNCTION
 
-FUNCTION hasOperator%% (v$)
-    hasOperator%% = INSTR(v$, "+") > 0 OR INSTR(v$, "-") > 0 OR INSTR(v$, "*") > 0 OR INSTR(v$, "/") > 0 OR INSTR(v$, "^") > 0
+FUNCTION inQuote%% (__text$, __position AS _UNSIGNED LONG)
+    DIM text$, position AS _UNSIGNED LONG
+    DIM openQuote AS _BYTE
+    DIM i AS _UNSIGNED LONG
+
+    text$ = __text$
+    position = __position
+
+    IF position > LEN(text$) THEN position = LEN(text)
+
+    FOR i = 1 TO position
+        IF ASC(text$, i) = 34 THEN openQuote = NOT openQuote
+    NEXT
+
+    inQuote%% = openQuote
 END FUNCTION
 
 FUNCTION firstOperator& (v$)
     DIM i AS LONG, op$
 
-    op$ = "+-*/^"
+    op$ = "+-*/^="
 
     FOR i = 1 TO LEN(v$)
         IF INSTR(op$, MID$(v$, i, 1)) THEN
-            firstOperator = i
-            EXIT FUNCTION
+            IF NOT inQuote%%(v$, i) THEN
+                firstOperator = i
+                EXIT FUNCTION
+            END IF
         END IF
     NEXT
 END FUNCTION
