@@ -45,6 +45,7 @@ DIM varIndex AS _UNSIGNED LONG, i AS _UNSIGNED LONG
 DIM doLine AS _UNSIGNED LONG, loopLine AS _UNSIGNED LONG
 DIM ifLine AS _UNSIGNED LONG
 DIM k AS LONG, externalLimit AS INTEGER
+DIM temp$
 DIM SHARED running AS _BYTE, loaded AS _BYTE, loadedFile$
 DIM SHARED CurrentSCREEN%
 
@@ -494,16 +495,9 @@ DO
             LOCATE GetVal(c$, 0, "")
         END IF
     ELSEIF LEFT$(L$, 6) = "FILES " THEN
-        DIM checkVar AS _UNSIGNED LONG, fileSpec$
-        checkVar = searchVar(MID$(L1$, 7))
-        IF checkVar THEN
-            FILES strings(checkVar)
-        ELSE
-            fileSpec$ = LTRIM$(RTRIM$(MID$(L1$, 7)))
-            IF LEFT$(fileSpec$, 1) = CHR$(34) THEN fileSpec$ = MID$(fileSpec$, 2)
-            IF RIGHT$(fileSpec$, 1) = CHR$(34) THEN fileSpec$ = LEFT$(fileSpec$, LEN(fileSpec$) - 1)
-            FILES fileSpec$
-        END IF
+        DIM fileSpec$
+        temp$ = doMath$(MID$(L1$, 7))
+        FILES temp$
     ELSEIF L$ = "FILES" THEN
         FILES
     ELSEIF LEFT$(L$, 8) = "CIRCLE (" THEN
@@ -570,26 +564,8 @@ DO
         PRINT doMath(MID$(L1$, 7));
         IF NOT retainCursor THEN PRINT
     ELSEIF LEFT$(L$, 7) = "_TITLE " THEN
-        q1 = INSTR(8, L1$, CHR$(34))
-        IF q1 THEN
-            q2 = INSTR(q1 + 1, L1$, CHR$(34))
-            IF q2 THEN
-                _TITLE MID$(L1$, 9, q2 - q1 - 1)
-            ELSE
-                GOTO syntaxerror
-            END IF
-        ELSE
-            varIndex = searchVar(MID$(L1$, 8))
-            IF varIndex THEN
-                IF vars(varIndex).type = varTypeSTRING THEN
-                    _TITLE strings(varIndex)
-                ELSE
-                    _TITLE STR$(nums(varIndex))
-                END IF
-            ELSE
-                _TITLE MID$(L1$, 8)
-            END IF
-        END IF
+        temp$ = doMath$(MID$(L1$, 8))
+        _TITLE temp$
     ELSEIF L$ = "CLS" THEN
         CLS
     ELSEIF L$ = "SYSTEM" OR L$ = "EXIT" THEN
@@ -1005,18 +981,18 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
 
     c$ = LTRIM$(RTRIM$(__c$))
 
-    IF LEFT$(c$, 1) = CHR$(34) THEN
-        IF debugging THEN _ECHO "literal string"
-        foundAsText = true
-        textReturn$ = removeQuote$(c$)
-        EXIT FUNCTION
-    END IF
-
     IF firstOperator(c$) > 1 THEN
         c$ = LEFT$(c$, firstOperator(c$) - 1)
         IF debugging THEN _ECHO "has operator"
     ELSE
         IF debugging THEN _ECHO "no operator"
+    END IF
+
+    IF LEFT$(c$, 1) = CHR$(34) THEN
+        IF debugging THEN _ECHO "literal string"
+        foundAsText = true
+        textReturn$ = removeQuote$(c$)
+        EXIT FUNCTION
     END IF
 
     IF VAL(c$) <> 0 THEN
@@ -1054,10 +1030,12 @@ FUNCTION doMath$ (__v$)
     DIM returnAsText AS _BYTE, textReturn$
     DIM returnAsText2 AS _BYTE, textReturn2$
     DIM tempQuote$
+    STATIC stack AS _UNSIGNED LONG
 
+    stack = stack + 1
     v$ = __v$
 
-    IF debugging THEN _ECHO "------------------ doing math on " + v$
+    IF debugging THEN _ECHO STR$(stack) + " -------------- doing math on " + v$
 
     IF firstOperator(v$) > 1 THEN
         s$ = MID$(v$, firstOperator(v$), 1)
@@ -1069,7 +1047,7 @@ FUNCTION doMath$ (__v$)
         ELSE
             doMath$ = LTRIM$(RTRIM$(STR$(GetVal(v$, 0, ""))))
         END IF
-        EXIT FUNCTION
+        stack = stack - 1: EXIT FUNCTION
     END IF
 
     v1$ = LEFT$(v$, INSTR(v$, s$) - 1)
@@ -1123,6 +1101,7 @@ FUNCTION doMath$ (__v$)
     LOOP
 
     doMath$ = LTRIM$(RTRIM$(temp$))
+    stack = stack - 1
 END FUNCTION
 
 FUNCTION inQuote%% (__text$, __position AS _UNSIGNED LONG)
@@ -1133,7 +1112,7 @@ FUNCTION inQuote%% (__text$, __position AS _UNSIGNED LONG)
     text$ = __text$
     position = __position
 
-    IF position > LEN(text$) THEN position = LEN(text)
+    IF position > LEN(text$) THEN position = LEN(text$)
 
     FOR i = 1 TO position
         IF ASC(text$, i) = 34 THEN openQuote = NOT openQuote
