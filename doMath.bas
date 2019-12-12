@@ -4,6 +4,8 @@ CONST debugging = true
 
 $CONSOLE
 
+_SCREENMOVE _SCREENX + 800, _SCREENY
+
 DIM l$
 DO
     LINE INPUT l$
@@ -100,8 +102,8 @@ FUNCTION Parse$ (__inputExpr AS STRING)
     FOR index = 1 TO totalStrings
         ' Compute the result for the current part of the expression
         DIM Result AS STRING
-        Result = STR$(Compute(strings(index)))
         IF debugging THEN _ECHO "Computing: " + strings(index)
+        Result = STR$(Compute(strings(index)))
 
         ' Iterate through all succeeding parts of the expression
         FOR n = index TO totalStrings
@@ -119,28 +121,112 @@ END FUNCTION
 
 FUNCTION Compute## (expr AS STRING)
     DIM i AS _UNSIGNED LONG, j AS _UNSIGNED LONG
-    DIM validOP$
-    DIM a AS _UNSIGNED _BYTE, ch AS STRING
-    DIM tempValue AS STRING
-    REDIM op(0) AS STRING, elements(0) AS STRING
+    DIM l AS _UNSIGNED LONG, m AS _UNSIGNED LONG, lastIndex AS _UNSIGNED LONG
+    DIM totalElements AS _UNSIGNED LONG
+    DIM ch AS STRING
+    DIM tempElement AS STRING, op1##, op2##, result##
+    REDIM element(1000) AS STRING
+    STATIC op(5) AS STRING, validOP$
 
     validOP$ = "^*/+-"
-    REDIM op(1 TO LEN(validOP$)) AS STRING
     FOR i = 1 TO LEN(validOP$)
         op(i) = MID$(validOP$, i, 1)
     NEXT
 
-    'break down expr into elements()
+    IF debugging THEN _ECHO "* Entering Compute##(): " + expr
+
+    'break down expr into element()
     FOR i = 1 TO LEN(expr)
-        a = ASC(expr, i)
-        ch = CHR$(a)
+        ch = MID$(expr, i, 1)
         IF INSTR(validOP$, ch) THEN
             'this is an operator
+            IF LEN(tempElement) THEN GOSUB addElement
+            tempElement = ch
+            GOSUB addElement
+            tempElement = ""
         ELSE
-            tempValue = tempValue + ch
+            tempElement = tempElement + ch
         END IF
     NEXT
+    IF LEN(tempElement) THEN GOSUB addElement
 
+    IF debugging THEN
+        DIM el$, tempElCount AS _UNSIGNED LONG
+        el$ = ""
+        tempElCount = 0
+        FOR l = 1 TO totalElements
+            IF LEN(_TRIM$(element$(l))) > 0 THEN
+                tempElCount = tempElCount + 1
+                el$ = el$ + element(l)
+            END IF
+        NEXT
+        _ECHO "** Total elements:" + STR$(tempElCount) + " **"
+        _ECHO el$
+        _ECHO "     ***"
+    END IF
+
+    FOR i = 1 TO LEN(validOP$)
+        FOR j = 1 TO totalElements
+            IF element(j) = op(i) THEN
+                l = 1
+                DO UNTIL LEN(_TRIM$(element(j - l))) > 0 AND INSTR(validOP$, element(j - l)) = 0
+                    l = l + 1
+                    IF j - l < 1 THEN EXIT FUNCTION
+                LOOP
+                op1## = VAL(element(j - l))
+                IF debugging THEN _ECHO "element(j - l) = " + element(j - l)
+                m = 1
+                DO UNTIL LEN(_TRIM$(element(j + m))) > 0 AND INSTR(validOP$, element(j + m)) = 0
+                    m = m + 1
+                    IF j + m > totalElements THEN EXIT FUNCTION
+                LOOP
+                op2## = VAL(element(j + m))
+                IF debugging THEN _ECHO "element(j + m) = " + element(j + m)
+                IF debugging THEN _ECHO "op1=" + STR$(op1##) + "; oper=" + op(i) + "; op2=" + STR$(op2##)
+                SELECT CASE op(i)
+                    CASE "^"
+                        result## = op1## ^ op2##
+                    CASE "*"
+                        result## = op1## * op2##
+                    CASE "/"
+                        result## = op1## / op2##
+                    CASE "+"
+                        result## = op1## + op2##
+                    CASE "-"
+                        result## = op1## - op2##
+                END SELECT
+                IF debugging THEN _ECHO "temp result## =" + STR$(result##)
+                element(j - l) = ""
+                element(j + m) = ""
+                element(j) = STR$(result##)
+                lastIndex = j
+                IF debugging THEN
+                    el$ = ""
+                    tempElCount = 0
+                    FOR l = 1 TO totalElements
+                        IF LEN(_TRIM$(element$(l))) > 0 THEN
+                            tempElCount = tempElCount + 1
+                            el$ = el$ + element(l)
+                        END IF
+                    NEXT
+                    _ECHO "** Total elements:" + STR$(tempElCount) + " **"
+                    _ECHO el$
+                    _ECHO "     ***"
+                END IF
+            END IF
+        NEXT
+    NEXT
+
+    Compute## = VAL(element(lastIndex))
+
+    EXIT FUNCTION
+    addElement:
+    totalElements = totalElements + 1
+    IF totalElements > UBOUND(element) THEN
+        REDIM _PRESERVE element(UBOUND(element) + 1000) AS STRING
+    END IF
+    element(totalElements) = tempElement
+    RETURN
 END FUNCTION
 
 FUNCTION arrayContains%% (array() AS STRING, text$)
