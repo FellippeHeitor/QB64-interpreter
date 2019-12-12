@@ -123,12 +123,12 @@ FUNCTION Compute## (expr AS STRING)
     DIM i AS _UNSIGNED LONG, j AS _UNSIGNED LONG
     DIM l AS _UNSIGNED LONG, m AS _UNSIGNED LONG, lastIndex AS _UNSIGNED LONG
     DIM totalElements AS _UNSIGNED LONG
-    DIM ch AS STRING
+    DIM ch AS STRING, hasOperator%%
     DIM tempElement AS STRING, op1##, op2##, result##
     REDIM element(1000) AS STRING
-    STATIC op(5) AS STRING, validOP$
+    STATIC op(6) AS STRING, validOP$
 
-    validOP$ = "^*/+-"
+    validOP$ = "^*/+-="
     FOR i = 1 TO LEN(validOP$)
         op(i) = MID$(validOP$, i, 1)
     NEXT
@@ -168,6 +168,7 @@ FUNCTION Compute## (expr AS STRING)
     FOR i = 1 TO LEN(validOP$)
         FOR j = 1 TO totalElements
             IF element(j) = op(i) THEN
+                hasOperator%% = true
                 l = 1
                 DO UNTIL LEN(_TRIM$(element(j - l))) > 0 AND INSTR(validOP$, element(j - l)) = 0
                     l = l + 1
@@ -194,6 +195,8 @@ FUNCTION Compute## (expr AS STRING)
                         result## = op1## + op2##
                     CASE "-"
                         result## = op1## - op2##
+                    CASE "="
+                        result## = op1## = op2##
                 END SELECT
                 IF debugging THEN _ECHO "temp result## =" + STR$(result##)
                 element(j - l) = ""
@@ -217,7 +220,11 @@ FUNCTION Compute## (expr AS STRING)
         NEXT
     NEXT
 
-    Compute## = VAL(element(lastIndex))
+    IF hasOperator%% = false AND totalElements = 1 THEN
+        Compute## = VAL(expr)
+    ELSE
+        Compute## = VAL(element(lastIndex))
+    END IF
 
     EXIT FUNCTION
     addElement:
@@ -227,13 +234,6 @@ FUNCTION Compute## (expr AS STRING)
     END IF
     element(totalElements) = tempElement
     RETURN
-END FUNCTION
-
-FUNCTION arrayContains%% (array() AS STRING, text$)
-    DIM i AS _UNSIGNED LONG
-    FOR i = LBOUND(array) TO UBOUND(array)
-        IF array(i) = text$ THEN arrayContains%% = true: EXIT FUNCTION
-    NEXT
 END FUNCTION
 
 FUNCTION Replace$ (TempText$, SubString$, NewString$, CaseSensitive AS _BYTE, TotalReplacements AS LONG)
@@ -264,45 +264,3 @@ FUNCTION Replace$ (TempText$, SubString$, NewString$, CaseSensitive AS _BYTE, To
 
     Replace$ = Text$
 END FUNCTION
-
-FUNCTION isNumber%% (a$)
-    DIM i AS _UNSIGNED LONG
-    DIM d AS _UNSIGNED LONG, e AS _UNSIGNED LONG
-    DIM dp AS _BYTE
-    DIM a AS _UNSIGNED _BYTE
-
-    IF LEN(a$) = 0 THEN EXIT FUNCTION
-    FOR i = 1 TO LEN(a$)
-        a = ASC(MID$(a$, i, 1))
-        IF a = 45 THEN
-            IF (i = 1 AND LEN(a$) > 1) OR (i > 1 AND ((d > 0 AND d = i - 1) OR (e > 0 AND e = i - 1))) THEN _CONTINUE
-            EXIT FUNCTION
-        END IF
-        IF a = 46 THEN
-            IF dp = 1 THEN EXIT FUNCTION
-            dp = 1
-            _CONTINUE
-        END IF
-        IF a = 100 OR a = 68 THEN 'D
-            IF d > 0 OR e > 0 THEN EXIT FUNCTION
-            IF i = 1 THEN EXIT FUNCTION
-            d = i
-            _CONTINUE
-        END IF
-        IF a = 101 OR a = 69 THEN 'E
-            IF d > 0 OR e > 0 THEN EXIT FUNCTION
-            IF i = 1 THEN EXIT FUNCTION
-            e = i
-            _CONTINUE
-        END IF
-        IF a = 43 THEN '+
-            IF (d > 0 AND d = i - 1) OR (e > 0 AND e = i - 1) THEN _CONTINUE
-            EXIT FUNCTION
-        END IF
-
-        IF a >= 48 AND a <= 57 THEN _CONTINUE
-        EXIT FUNCTION
-    NEXT
-    isNumber%% = true
-END FUNCTION
-
