@@ -89,8 +89,8 @@ varIndex = addVar("_width"): vars(varIndex).protected = true
 varIndex = addVar("_height"): vars(varIndex).protected = true
 varIndex = addVar("_mousex"): vars(varIndex).protected = true
 varIndex = addVar("_mousey"): vars(varIndex).protected = true
-varIndex = addVar("_mousebutton(1)"): vars(varIndex).protected = true
-varIndex = addVar("_mousebutton(2)"): vars(varIndex).protected = true
+varIndex = addVar("_mousebutton"): vars(varIndex).protected = true
+varIndex = addVar("_mousebutton"): vars(varIndex).protected = true
 
 SCREEN CurrentSCREEN%
 DO
@@ -740,7 +740,6 @@ RESUME Parse.Done
 FUNCTION addVar~& (varName$)
     DIM found AS _BYTE
 
-    db_echo "Add var " + varName$
     'check if var exists
     found = searchVar(varName$)
 
@@ -803,12 +802,9 @@ END FUNCTION
 
 FUNCTION searchVar~& (__varName$)
     DIM i AS _UNSIGNED LONG, found AS _BYTE
-    DIM temp##, temp$, special AS _BYTE
-    DIM varName$, isString AS _BYTE
+    DIM varName$
 
     varName$ = __varName$
-
-    db_echo "Searching for var " + varName$
 
     ''DIM bracket1 AS LONG, bracket2 AS LONG
     ''bracket1 = INSTR(varName$, "(")
@@ -969,8 +965,10 @@ FUNCTION removeQuote$ (__text$)
 END FUNCTION
 
 FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
-    DIM c$
+    DIM c$, sp AS _UNSIGNED LONG
     DIM varIndex AS _UNSIGNED LONG
+    DIM temp##, temp$
+
     db_echo "entering getval(): " + __c$
 
     c$ = LTRIM$(RTRIM$(__c$))
@@ -982,9 +980,58 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
         EXIT FUNCTION
     END IF
 
+    sp = INSTR(c$, CHR$(32))
+    IF sp THEN
+        temp$ = MID$(c$, sp + 1)
+        temp## = VAL(temp$)
+        c$ = LEFT$(c$, sp - 1)
+    END IF
+
     varIndex = searchVar(c$)
     IF varIndex THEN
-        IF vars(varIndex).type = varTypeSTRING THEN
+        IF vars(varIndex).protected THEN
+            db_echo "returning QB64 function"
+            SELECT CASE RTRIM$(vars(varIndex).name)
+                CASE "cos"
+                    GetVal## = COS(temp##)
+                CASE "val"
+                    GetVal## = VAL(temp$)
+                CASE "int"
+                    GetVal## = INT(temp##)
+                CASE "asc"
+                    GetVal## = ASC(temp$)
+                CASE "sin"
+                    GetVal## = SIN(temp##)
+                CASE "len"
+                    GetVal## = LEN(temp$)
+                CASE "rnd"
+                    GetVal## = RND
+                CASE "timer"
+                    GetVal## = TIMER
+                CASE "time$"
+                    foundAsText = true
+                    textReturn$ = TIME$
+                CASE "date$"
+                    foundAsText = true
+                    textReturn$ = DATE$
+                CASE "chr$"
+                    foundAsText = true
+                    textReturn$ = CHR$(temp##)
+                CASE "inkey$"
+                    foundAsText = true
+                    textReturn$ = INKEY$
+                CASE "_width"
+                    GetVal## = _WIDTH
+                CASE "_height"
+                    GetVal## = _HEIGHT
+                CASE "_mousex"
+                    GetVal## = _MOUSEX
+                CASE "_mousey"
+                    GetVal## = _MOUSEY
+                CASE "_mousebutton"
+                    GetVal## = _MOUSEBUTTON(temp##)
+            END SELECT
+        ELSEIF vars(varIndex).type = varTypeSTRING THEN
             db_echo "found in strings()"
             foundAsText = true
             textReturn$ = strings(varIndex)
@@ -1131,37 +1178,37 @@ END FUNCTION
 '    doMath$ = LTRIM$(RTRIM$(temp$))
 'END FUNCTION
 
-FUNCTION inQuote%% (__text$, __position AS _UNSIGNED LONG)
-    DIM text$, position AS _UNSIGNED LONG
-    DIM openQuote AS _BYTE
-    DIM i AS _UNSIGNED LONG
+''FUNCTION inQuote%% (__text$, __position AS _UNSIGNED LONG)
+''    DIM text$, position AS _UNSIGNED LONG
+''    DIM openQuote AS _BYTE
+''    DIM i AS _UNSIGNED LONG
 
-    text$ = __text$
-    position = __position
+''    text$ = __text$
+''    position = __position
 
-    IF position > LEN(text$) THEN position = LEN(text$)
+''    IF position > LEN(text$) THEN position = LEN(text$)
 
-    FOR i = 1 TO position
-        IF ASC(text$, i) = 34 THEN openQuote = NOT openQuote
-    NEXT
+''    FOR i = 1 TO position
+''        IF ASC(text$, i) = 34 THEN openQuote = NOT openQuote
+''    NEXT
 
-    inQuote%% = openQuote
-END FUNCTION
+''    inQuote%% = openQuote
+''END FUNCTION
 
-FUNCTION firstOperator& (v$)
-    DIM i AS LONG, op$
+''FUNCTION firstOperator& (v$)
+''    DIM i AS LONG, op$
 
-    op$ = "+-*/^="
+''    op$ = "+-*/^="
 
-    FOR i = 1 TO LEN(v$)
-        IF INSTR(op$, MID$(v$, i, 1)) THEN
-            IF NOT inQuote%%(v$, i) THEN
-                firstOperator = i
-                EXIT FUNCTION
-            END IF
-        END IF
-    NEXT
-END FUNCTION
+''    FOR i = 1 TO LEN(v$)
+''        IF INSTR(op$, MID$(v$, i, 1)) THEN
+''            IF NOT inQuote%%(v$, i) THEN
+''                firstOperator = i
+''                EXIT FUNCTION
+''            END IF
+''        END IF
+''    NEXT
+''END FUNCTION
 
 
 FUNCTION Parse$ (__inputExpr AS STRING)
@@ -1413,7 +1460,11 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
     NEXT
 
     IF hasOperator%% = false AND totalElements = 1 THEN
-        op1## = GetVal(element(1), getvalTxtRet, getvalTxtResult)
+        IF isNumber(element(1)) THEN
+            op1## = VAL(element(1))
+        ELSE
+            op1## = GetVal(element(1), getvalTxtRet, getvalTxtResult)
+        END IF
         IF getvalTxtRet THEN
             foundAsText = true
             textReturn$ = getvalTxtResult
