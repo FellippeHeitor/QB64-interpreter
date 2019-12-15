@@ -13,9 +13,10 @@ DO
     PRINT Parse(l$)
 LOOP
 
-'Adapted from https://www.codeproject.com/Articles/1205435/Parsing-Mathematical-Expressions-in-VB-NET-Missi
-' Call this routine to perform the actual mathematic expression parsing
 FUNCTION Parse$ (__inputExpr AS STRING)
+    'Adapted from https://www.codeproject.com/Articles/1205435/Parsing-Mathematical-Expressions-in-VB-NET-Missi
+    ' Call this routine to perform the actual mathematic expression parsing
+    ' Comments retained from the original code.
     DIM t AS _UNSIGNED LONG, index AS _UNSIGNED LONG
     DIM totalStrings AS _UNSIGNED LONG
     DIM inputExpr AS STRING
