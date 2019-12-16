@@ -1,15 +1,18 @@
 OPTION _EXPLICIT
 
-CONST true = -1, false = NOT true
-
 $CONSOLE
-'_CONSOLE OFF
+
+CONST true = -1, false = NOT true
 
 DIM SHARED debugging AS _BYTE
 debugging = true
-_SCREENMOVE _SCREENX + 800, _SCREENY
 
-IF debugging = false THEN ON ERROR GOTO oops
+IF debugging = false THEN
+    _CONSOLE OFF
+    ON ERROR GOTO oops
+ELSE
+    _SCREENMOVE _SCREENX + 800, _SCREENY
+END IF
 
 KEY 2, "LIST" + CHR$(13)
 KEY 3, "LOAD "
@@ -35,7 +38,7 @@ CONST varType_UINTEGER = 7
 CONST varType_UINTEGER64 = 8
 CONST varType_INTEGER64 = 9
 CONST varType_ULONG = 10
-CONST varType_LONG = 11
+CONST varTypeLONG = 11
 
 
 REDIM SHARED vars(0) AS vartype
@@ -73,30 +76,53 @@ ELSEIF LEN(COMMAND$) > 0 THEN
 END IF
 
 'internal variables (functions)
-varIndex = addVar("val"): vars(varIndex).protected = true
-varIndex = addVar("int"): vars(varIndex).protected = true
-varIndex = addVar("asc"): vars(varIndex).protected = true
-varIndex = addVar("cos"): vars(varIndex).protected = true
-varIndex = addVar("sin"): vars(varIndex).protected = true
-varIndex = addVar("len"): vars(varIndex).protected = true
-varIndex = addVar("rnd"): vars(varIndex).protected = true
-varIndex = addVar("timer"): vars(varIndex).protected = true
-varIndex = addVar("time$"): vars(varIndex).protected = true
-varIndex = addVar("date$"): vars(varIndex).protected = true
-varIndex = addVar("chr$"): vars(varIndex).protected = true
-varIndex = addVar("inkey$"): vars(varIndex).protected = true
-varIndex = addVar("_width"): vars(varIndex).protected = true
-varIndex = addVar("_height"): vars(varIndex).protected = true
-varIndex = addVar("_mousex"): vars(varIndex).protected = true
-varIndex = addVar("_mousey"): vars(varIndex).protected = true
-varIndex = addVar("_mousebutton"): vars(varIndex).protected = true
-varIndex = addVar("_mousebutton"): vars(varIndex).protected = true
+RESTORE QB64Functions
+DIM funcName$
+DO
+    READ funcName$
+    IF funcName$ = "*end*" THEN EXIT DO
+    varIndex = addVar(funcName$)
+    vars(varIndex).protected = true
+LOOP
+
+QB64Functions:
+DATA val,int,asc,cos,sin,len,rnd,timer,time$,date$
+DATA chr$,inkey$,_width,_height,_mousex,_mousey,_mousebutton
+DATA str$,asc,_resize,_resizewidth,_resizeheight,_scaledwidth
+DATA _scaledheight,_screenhide,_console,_blink,_fileexists
+DATA _direxists,_devices,_device$,_deviceinput,_lastbutton
+DATA _lastaxis,_lastwheel,_button,_buttonchange,_axis,_wheel
+DATA _screenx,_screeny,_os$,_title$,_mapunicode,_keydown
+DATA _keyhit,_windowhandle,_screenimage,_freetimer,_fullscreen
+DATA _smooth,_windowhasfocus,_clipboard$,_clipboardimage
+DATA _exit,_openhost,_connected,_connectionaddress,_connectionaddress$
+DATA _openconnection,_openclient,environ$,_errorline,_inclerrorline
+DATA _acceptfiledrop,_totaldroppedfiles,_droppedfile,_droppedfile$
+DATA _newimage,_loadimage,_copyimage,_source,_dest,_display
+DATA _pixelsize,_clearcolor,_blend,_defaultcolor,_backgroundcolor
+DATA _palettecolor,_loadfont,_fontwidth,_fontheight,_font
+DATA _printwidth,_printmode,_rgba,_rgba32,_rgb,_rgb32
+DATA _red,_red32,_green,_green32,_blue,_blue32
+DATA _alpha,_alpha32,_mouseinput,_mousewheel,freefile
+DATA shell,_shellhide,command$,_commandcount,_sndrate
+DATA _sndopenraw,_sndrawlen,_sndlen,_sndpaused,_sndopen
+DATA _sndgetpos,_sndplaying,_sndcopy,seek,loc,eof
+DATA lof,screen,point,tab,spc,inp,pos,sgn,lbound,ubound
+DATA oct$,hex$,exp,fix,cdbl,csng,_round,cint,clng
+DATA csrlin,mki$,mkl$,mks$,mkd$,mksmbf$,mkdmbf$
+DATA _mk$,cvsmbf,cvdmbf,cvi,cvl,cvs,cvd,_cv
+DATA string$,space$,instr,_instrrev,mid$,sqr
+DATA tan,atn,log,abs,erl,err,ucase$,lcase$,left$
+DATA right$,ltrim$,rtrim$,_trim$,_cwd$,_startdir$
+DATA _dir$,_inclerrorfile$,_atan2,_hypot,_pi,_desktopheight
+DATA _desktopwidth,_screenexists,_controlchr,_stricmp
+DATA _strcmp,_autodisplay,_shr,_shl,_deflate$,_inflate$
+DATA _readbit,_setbit,_resetbit,_togglebit
+DATA *end*
 
 SCREEN CurrentSCREEN%
 DO
     k = _KEYHIT
-
-    WHILE _MOUSEINPUT: WEND
 
     IF (k = ASC("C") OR k = ASC("c")) AND (_KEYDOWN(100305) OR _KEYDOWN(100306)) THEN
         PRINT "Break."
@@ -575,6 +601,12 @@ DO
         _TITLE temp$
     ELSEIF L$ = "CLS" THEN
         CLS
+        IF debugging THEN
+            i = _DEST
+            _DEST _CONSOLE
+            CLS
+            _DEST i
+        END IF
     ELSEIF L$ = "SYSTEM" OR L$ = "EXIT" THEN
         SYSTEM
     ELSEIF L$ = "END" THEN
@@ -796,7 +828,7 @@ FUNCTION detectType%% (__varname$)
     ELSEIF RIGHT$(varname$, 2) = "~&" THEN
         detectType%% = varType_ULONG
     ELSEIF RIGHT$(varname$, 1) = "&" THEN
-        detectType%% = varType_LONG
+        detectType%% = varTypeLONG
     END IF
 END FUNCTION
 
@@ -991,6 +1023,8 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
     IF varIndex THEN
         IF vars(varIndex).protected THEN
             db_echo "returning QB64 function"
+            db_echo "temp## =" + STR$(temp##)
+            db_echo "temp$  =" + CHR$(34) + temp$ + CHR$(34)
             SELECT CASE RTRIM$(vars(varIndex).name)
                 CASE "cos"
                     GetVal## = COS(temp##)
@@ -1017,6 +1051,9 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
                 CASE "chr$"
                     foundAsText = true
                     textReturn$ = CHR$(temp##)
+                CASE "str$"
+                    foundAsText = true
+                    textReturn$ = STR$(temp##)
                 CASE "inkey$"
                     foundAsText = true
                     textReturn$ = INKEY$
@@ -1030,6 +1067,384 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
                     GetVal## = _MOUSEY
                 CASE "_mousebutton"
                     GetVal## = _MOUSEBUTTON(temp##)
+                CASE "_resize"
+                    GetVal## = _RESIZE
+                CASE "_resizewidth"
+                    GetVal## = _RESIZEWIDTH
+                CASE "_resizeheight"
+                    GetVal## = _RESIZEHEIGHT
+                CASE "_scaledwidth"
+                    GetVal## = _SCALEDWIDTH
+                CASE "_scaledheight"
+                    GetVal## = _SCALEDHEIGHT
+                CASE "_screenhide"
+                    GetVal## = _SCREENHIDE
+                CASE "_console"
+                    GetVal## = _CONSOLE
+                CASE "_blink"
+                    GetVal## = _BLINK
+                CASE "_fileexists"
+                    GetVal## = _FILEEXISTS(temp$)
+                CASE "_direxists"
+                    GetVal## = _DIREXISTS(temp$)
+                CASE "_devices"
+                    GetVal## = _DEVICES
+                CASE "_device$"
+                    foundAsText = true
+                    textReturn$ = _DEVICE$
+                CASE "_deviceinput"
+                    GetVal## = _DEVICEINPUT
+                CASE "_lastbutton"
+                    GetVal## = _LASTBUTTON
+                CASE "_lastaxis"
+                    GetVal## = _LASTAXIS
+                CASE "_lastwheel"
+                    GetVal## = _LASTWHEEL
+                CASE "_button"
+                    GetVal## = _BUTTON
+                CASE "_buttonchange"
+                    GetVal## = _BUTTONCHANGE
+                CASE "_axis"
+                    GetVal## = _AXIS
+                CASE "_wheel"
+                    GetVal## = _WHEEL
+                CASE "_screenx"
+                    GetVal## = _SCREENX
+                CASE "_screeny"
+                    GetVal## = _SCREENY
+                CASE "_os$"
+                    foundAsText = true
+                    textReturn$ = _OS$
+                CASE "_title$"
+                    foundAsText = true
+                    textReturn$ = _TITLE$
+                CASE "_mapunicode"
+                    GetVal## = _MAPUNICODE(temp##)
+                CASE "_keydown"
+                    GetVal## = _KEYDOWN(temp##)
+                CASE "_keyhit"
+                    GetVal## = _KEYHIT
+                CASE "_windowhandle"
+                    GetVal## = _WINDOWHANDLE
+                CASE "_screenimage"
+                    GetVal## = _SCREENIMAGE
+                CASE "_freetimer"
+                    GetVal## = _FREETIMER
+                CASE "_fullscreen"
+                    GetVal## = _FULLSCREEN
+                CASE "_smooth"
+                    GetVal## = _SMOOTH
+                CASE "_windowhasfocus"
+                    GetVal## = _WINDOWHASFOCUS
+                CASE "_clipboard$"
+                    foundAsText = true
+                    textReturn$ = _CLIPBOARD$
+                CASE "_clipboardimage"
+                    GetVal## = _CLIPBOARDIMAGE
+                CASE "_exit"
+                    GetVal## = _EXIT
+                CASE "_openhost"
+                    GetVal## = _OPENHOST(temp$)
+                CASE "_connected"
+                    GetVal## = _CONNECTED(temp##)
+                CASE "_connectionaddress", "_connectionaddress$"
+                    foundAsText = true
+                    textReturn$ = _CONNECTIONADDRESS$(temp##)
+                CASE "_openconnection"
+                    GetVal## = _OPENCONNECTION(temp##)
+                CASE "_openclient"
+                    GetVal## = _OPENCLIENT(temp$)
+                CASE "environ$"
+                    foundAsText = true
+                    textReturn$ = ENVIRON$(temp$)
+                CASE "_errorline"
+                    GetVal## = _ERRORLINE
+                CASE "_inclerrorline"
+                    GetVal## = _INCLERRORLINE
+                CASE "_acceptfiledrop"
+                    GetVal## = _ACCEPTFILEDROP
+                CASE "_totaldroppedfiles"
+                    GetVal## = _TOTALDROPPEDFILES
+                CASE "_droppedfile", "_droppedfile$"
+                    foundAsText = true
+                    textReturn$ = _DROPPEDFILE$
+                CASE "_newimage"
+                    'GetVal## = _newimage
+                CASE "_loadimage"
+                    GetVal## = _LOADIMAGE(temp$)
+                CASE "_copyimage"
+                    GetVal## = _COPYIMAGE(temp##)
+                CASE "_source"
+                    GetVal## = _SOURCE
+                CASE "_dest"
+                    GetVal## = _DEST
+                CASE "_display"
+                    GetVal## = _DISPLAY
+                CASE "_pixelsize"
+                    GetVal## = _PIXELSIZE
+                CASE "_clearcolor"
+                    GetVal## = _CLEARCOLOR
+                CASE "_blend"
+                    GetVal## = _BLEND
+                CASE "_defaultcolor"
+                    GetVal## = _DEFAULTCOLOR
+                CASE "_backgroundcolor"
+                    GetVal## = _BACKGROUNDCOLOR
+                CASE "_palettecolor"
+                    GetVal## = _PALETTECOLOR(temp##)
+                CASE "_loadfont"
+                    'GetVal## = _loadfont
+                CASE "_fontwidth"
+                    GetVal## = _FONTWIDTH
+                CASE "_fontheight"
+                    GetVal## = _FONTHEIGHT
+                CASE "_font"
+                    GetVal## = _FONT
+                CASE "_printwidth"
+                    GetVal## = _PRINTWIDTH(temp$)
+                CASE "_printmode"
+                    GetVal## = _PRINTMODE
+                CASE "_rgba"
+                    'GetVal## = _rgba
+                CASE "_rgba32"
+                    'GetVal## = _rgba32
+                CASE "_rgb"
+                    'GetVal## = _rgb
+                CASE "_rgb32"
+                    'GetVal## = _rgb32
+                CASE "_red"
+                    'GetVal## = _red
+                CASE "_red32"
+                    'GetVal## = _red32
+                CASE "_green"
+                    'GetVal## = _green
+                CASE "_green32"
+                    'GetVal## = _green32
+                CASE "_blue"
+                    'GetVal## = _blue
+                CASE "_blue32"
+                    'GetVal## = _blue32
+                CASE "_alpha"
+                    'GetVal## = _alpha
+                CASE "_alpha32"
+                    'GetVal## = _alpha32
+                CASE "_mouseinput"
+                    GetVal## = _MOUSEINPUT
+                CASE "_mousewheel"
+                    GetVal## = _MOUSEWHEEL
+                CASE "freefile"
+                    GetVal## = FREEFILE
+                CASE "shell"
+                    GetVal## = SHELL(temp$)
+                CASE "_shellhide"
+                    GetVal## = _SHELLHIDE(temp$)
+                CASE "command$"
+                    foundAsText = true
+                    textReturn$ = COMMAND$(temp##)
+                CASE "_commandcount"
+                    GetVal## = _COMMANDCOUNT
+                CASE "_sndrate"
+                    GetVal## = _SNDRATE
+                CASE "_sndopenraw"
+                    GetVal## = _SNDOPENRAW
+                CASE "_sndrawlen"
+                    GetVal## = _SNDRAWLEN
+                CASE "_sndlen"
+                    GetVal## = _SNDLEN(temp##)
+                CASE "_sndpaused"
+                    GetVal## = _SNDPAUSED(temp##)
+                CASE "_sndopen"
+                    GetVal## = _SNDOPEN(temp$)
+                CASE "_sndgetpos"
+                    GetVal## = _SNDGETPOS(temp##)
+                CASE "_sndplaying"
+                    GetVal## = _SNDPLAYING(temp##)
+                CASE "_sndcopy"
+                    GetVal## = _SNDCOPY(temp##)
+                CASE "seek"
+                    GetVal## = SEEK(temp##)
+                CASE "loc"
+                    GetVal## = LOC(temp##)
+                CASE "eof"
+                    GetVal## = EOF(temp##)
+                CASE "lof"
+                    GetVal## = LOF(temp##)
+                CASE "screen"
+                    'GetVal## = screen
+                CASE "point"
+                    'GetVal## = point
+                CASE "tab"
+                    foundAsText = true
+                    textReturn$ = TAB(temp##)
+                CASE "spc"
+                    foundAsText = true
+                    textReturn$ = SPC(temp##)
+                CASE "inp"
+                    GetVal## = INP(temp##)
+                CASE "pos"
+                    GetVal## = POS(temp##)
+                CASE "sgn"
+                    GetVal## = SGN(temp##)
+                CASE "lbound"
+                    'GetVal## = lbound
+                CASE "ubound"
+                    'GetVal## = ubound
+                CASE "oct$"
+                    foundAsText = true
+                    textReturn$ = OCT$(temp##)
+                CASE "hex$"
+                    foundAsText = true
+                    textReturn$ = HEX$(temp##)
+                CASE "exp"
+                    GetVal## = EXP(temp##)
+                CASE "fix"
+                    GetVal## = FIX(temp##)
+                CASE "cdbl"
+                    GetVal## = CDBL(temp##)
+                CASE "csng"
+                    GetVal## = CSNG(temp##)
+                CASE "_round"
+                    GetVal## = _ROUND(temp##)
+                CASE "cint"
+                    GetVal## = CINT(temp##)
+                CASE "clng"
+                    GetVal## = CLNG(temp##)
+                CASE "csrlin"
+                    GetVal## = CSRLIN
+                CASE "mki$"
+                    foundAsText = true
+                    textReturn$ = MKI$(temp##)
+                CASE "mkl$"
+                    foundAsText = true
+                    textReturn$ = MKL$(temp##)
+                CASE "mks$"
+                    foundAsText = true
+                    textReturn$ = MKS$(temp##)
+                CASE "mkd$"
+                    foundAsText = true
+                    textReturn$ = MKD$(temp##)
+                CASE "mksmbf$"
+                    foundAsText = true
+                    textReturn$ = MKSMBF$(temp##)
+                CASE "mkdmbf$"
+                    foundAsText = true
+                    textReturn$ = MKDMBF$(temp##)
+                CASE "_mk$"
+                    foundAsText = true
+                    'textReturn$ = _mk$
+                CASE "cvsmbf"
+                    GetVal## = CVSMBF(temp$)
+                CASE "cvdmbf"
+                    GetVal## = CVDMBF(temp$)
+                CASE "cvi"
+                    GetVal## = CVI(temp$)
+                CASE "cvl"
+                    GetVal## = CVL(temp$)
+                CASE "cvs"
+                    GetVal## = CVS(temp$)
+                CASE "cvd"
+                    GetVal## = CVD(temp$)
+                CASE "_cv"
+                    'GetVal## = _cv
+                CASE "string$"
+                    'foundAsText = true
+                    'textReturn$ = string$(temp##)
+                CASE "space$"
+                    foundAsText = true
+                    textReturn$ = SPACE$(temp##)
+                CASE "instr"
+                    'GetVal## = instr
+                CASE "_instrrev"
+                    'GetVal## = _instrrev
+                CASE "mid$"
+                    'foundAsText = true
+                    'textReturn$ = mid$
+                CASE "sqr"
+                    GetVal## = SQR(temp##)
+                CASE "tan"
+                    GetVal## = TAN(temp##)
+                CASE "atn"
+                    GetVal## = ATN(temp##)
+                CASE "log"
+                    GetVal## = LOG(temp##)
+                CASE "abs"
+                    GetVal## = ABS(temp##)
+                CASE "erl"
+                    GetVal## = ERL
+                CASE "err"
+                    GetVal## = ERR
+                CASE "ucase$"
+                    foundAsText = true
+                    textReturn$ = UCASE$(temp$)
+                CASE "lcase$"
+                    foundAsText = true
+                    textReturn$ = LCASE$(temp$)
+                CASE "left$"
+                    'foundAsText = true
+                    'textReturn$ = left$
+                CASE "right$"
+                    'foundAsText = true
+                    'textReturn$ = right$
+                CASE "ltrim$"
+                    foundAsText = true
+                    textReturn$ = LTRIM$(temp$)
+                CASE "rtrim$"
+                    foundAsText = true
+                    textReturn$ = RTRIM$(temp$)
+                CASE "_trim$"
+                    foundAsText = true
+                    textReturn$ = _TRIM$(temp$)
+                CASE "_cwd$"
+                    foundAsText = true
+                    textReturn$ = _CWD$
+                CASE "_startdir$"
+                    foundAsText = true
+                    textReturn$ = _STARTDIR$
+                CASE "_dir$"
+                    foundAsText = true
+                    textReturn$ = _DIR$(temp$)
+                CASE "_inclerrorfile$"
+                    foundAsText = true
+                    textReturn$ = _INCLERRORFILE$
+                CASE "_atan2"
+                    'GetVal## = _atan2
+                CASE "_hypot"
+                    'GetVal## = _hypot
+                CASE "_pi"
+                    IF temp$ = "" THEN temp## = 1
+                    GetVal## = _PI(temp##)
+                CASE "_desktopheight"
+                    GetVal## = _DESKTOPHEIGHT
+                CASE "_desktopwidth"
+                    GetVal## = _DESKTOPWIDTH
+                CASE "_screenexists"
+                    GetVal## = _SCREENEXISTS
+                CASE "_controlchr"
+                    GetVal## = _CONTROLCHR
+                CASE "_stricmp"
+                    'GetVal## = _stricmp
+                CASE "_strcmp"
+                    'GetVal## = _strcmp
+                CASE "_autodisplay"
+                    GetVal## = _AUTODISPLAY
+                CASE "_shr"
+                    'GetVal## = _shr
+                CASE "_shl"
+                    'GetVal## = _shl
+                CASE "_deflate$"
+                    foundAsText = true
+                    textReturn$ = _DEFLATE$(temp$)
+                CASE "_inflate$"
+                    foundAsText = true
+                    textReturn$ = _INFLATE$(temp$)
+                CASE "_readbit"
+                    'GetVal## = _readbit
+                CASE "_setbit"
+                    'GetVal## = _setbit
+                CASE "_resetbit"
+                    'GetVal## = _resetbit
+                CASE "_togglebit"
+                    'GetVal## = _togglebit
             END SELECT
         ELSEIF vars(varIndex).type = varTypeSTRING THEN
             db_echo "found in strings()"
@@ -1050,9 +1465,7 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
                 GetVal## = VAL(c$)
                 db_echo "returning val()"
             ELSE
-                foundAsText = true
-                textReturn$ = c$
-                db_echo "returning as text literal"
+                db_echo "returning 0"
             END IF
         END IF
     END IF
@@ -1236,11 +1649,9 @@ FUNCTION Parse$ (__inputExpr AS STRING)
             IF index = 0 THEN
                 'OC: If so assign n variable to the value of variable index
                 n = 1
-                db_echo "Beginning of expression reached; n =" + STR$(n)
             ELSE
                 'OC: Otherwise assign n variable to the value of variable index + 1
                 n = index + 1
-                db_echo "'(' found at" + STR$(index) + "; n =" + STR$(n)
             END IF
 
             DIM exists AS _BYTE
@@ -1293,7 +1704,6 @@ FUNCTION Parse$ (__inputExpr AS STRING)
             totalStrings = totalStrings + 1
             REDIM _PRESERVE strs(totalStrings)
             strs(totalStrings) = sb
-            db_echo "Substring stored: " + sb
         END IF
     NEXT
 
@@ -1301,16 +1711,13 @@ FUNCTION Parse$ (__inputExpr AS STRING)
     FOR index = 1 TO totalStrings
         'OC: Compute the result for the current part of the expression
         DIM Result AS STRING
-        db_echo "Computing: " + strs(index)
         Result = STR$(Compute(strs(index), returnAsText, textReturn))
 
         'OC: Iterate through all succeeding parts of the expression
         FOR n = index TO totalStrings
             'OC: For each part substitute the substring containing the current part of the expression
             'OC: with its numerical value without parentheses.
-            db_echo "Passing substring to Replace(): " + strs(n)
             strs(n) = Replace(strs(n), "(" + strs(index) + ")", Result, 0, 0)
-            db_echo "           Result of Replace(): " + strs(n)
         NEXT
     NEXT
     'OC: Compute the numerical value of the last part (e.g. the numerical resulting value of the entire expression)
