@@ -146,18 +146,30 @@ DO
     L1$ = LTRIM$(RTRIM$(L1$))
     L$ = UCASE$(L1$)
     IF isNumber(LEFT$(L$, INSTR(L$, CHR$(32)) - 1)) THEN
-        PRINT "Not yet implemented"
-    ELSEIF LEFT$(L$, 5) = "LOAD " THEN
-        tryWithExtension:
         IF NOT running THEN
-            IF _FILEEXISTS(MID$(L1$, 6)) THEN
-                loaded = load(MID$(L1$, 6))
+            IF loaded THEN
+                i = VAL(LEFT$(L1$, INSTR(L1$, CHR$(32)) - 1))
+                L1$ = MID$(L1$, INSTR(L1$, CHR$(32)) + 1)
+                IF i > UBOUND(program) THEN
+                    REDIM _PRESERVE program(i) AS STRING
+                END IF
+                program(i) = L1$
+            ELSE
+                PRINT "No program loaded. Use NEW or LOAD <file>."
+            END IF
+        END IF
+    ELSEIF LEFT$(L$, 5) = "LOAD " THEN
+        IF NOT running THEN
+            temp$ = Parse$(MID$(L1$, 6))
+            tryWithExtension:
+            IF _FILEEXISTS(temp$) THEN
+                loaded = load(temp$)
                 IF loaded THEN PRINT "Loaded."
             ELSE
-                IF RIGHT$(LCASE$(MID$(L1$, 6)), 4) = ".bas" THEN
-                    PRINT "File not found - "; MID$(L1$, 6)
+                IF RIGHT$(temp$, 4) = ".bas" THEN
+                    PRINT "File not found - "; temp$
                 ELSE
-                    L1$ = L1$ + ".bas"
+                    temp$ = temp$ + ".bas"
                     GOTO tryWithExtension
                 END IF
             END IF
@@ -190,11 +202,11 @@ DO
             END IF
         END IF
     ELSEIF LEFT$(L$, 6) = "CHDIR " THEN
-        CHDIR MID$(L1$, 7)
+        CHDIR Parse$(MID$(L1$, 7))
     ELSEIF LEFT$(L$, 6) = "MKDIR " THEN
-        MKDIR MID$(L1$, 7)
+        MKDIR Parse$(MID$(L1$, 7))
     ELSEIF LEFT$(L$, 5) = "KILL " THEN
-        KILL MID$(L1$, 6)
+        KILL Parse$(MID$(L1$, 6))
     ELSEIF L$ = "DEBUG ON" THEN
         _CONSOLE ON
         debugging = true
@@ -468,27 +480,27 @@ DO
             p1$ = LEFT$(p$, INSTR(p$, ",") - 1)
             p2$ = MID$(p$, INSTR(p$, ",") + 1)
             IF LEN(p1$) = 0 THEN
-                WIDTH , GetVal(p2$, 0, "")
+                WIDTH , VAL(Parse$(p2$))
             ELSE
-                WIDTH GetVal(p1$, 0, ""), GetVal(p2$, 0, "")
+                WIDTH VAL(Parse$(p1$)), VAL(Parse$(p2$))
             END IF
         ELSE
-            WIDTH GetVal(p$, 0, "")
+            WIDTH VAL(Parse$(p$))
         END IF
     ELSEIF LEFT$(L$, 10) = "RANDOMIZE " THEN
-        IF GetVal(MID$(L$, 11), 0, "") > 0 THEN
-            RANDOMIZE GetVal(MID$(L$, 11), 0, "")
-        END IF
+        RANDOMIZE VAL(Parse$(MID$(L$, 11)))
     ELSEIF LEFT$(L$, 7) = "_LIMIT " THEN
-        IF GetVal(MID$(L$, 8), 0, "") > 0 THEN
-            externalLimit = GetVal(MID$(L$, 8), 0, "")
-        END IF
+        externalLimit = VAL(Parse$(MID$(L$, 8)))
     ELSEIF LEFT$(L$, 1) = "'" OR LEFT$(L$, 4) = "REM " OR L$ = "'" OR L$ = "REM" OR L$ = "" THEN
         'it's a comment.
-    ELSEIF L$ = "KEY OFF" THEN
-        KEY OFF
-    ELSEIF L$ = "KEY ON" THEN
-        KEY ON
+    ELSEIF LEFT$(L$, 4) = "KEY " THEN
+        IF _TRIM$(MID$(L$, 5)) = "ON" THEN
+            KEY ON
+        ELSEIF _TRIM$(MID$(L$, 5)) = "OFF" THEN
+            KEY OFF
+        ELSE
+            GOTO syntaxerror
+        END IF
     ELSEIF L$ = "RUN" THEN
         IF NOT running THEN
             IF loaded THEN
@@ -506,14 +518,22 @@ DO
             c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
             c2$ = MID$(c$, INSTR(c$, ",") + 1)
             IF LEN(c1$) > 0 AND LEN(c2$) > 0 THEN
-                COLOR GetVal(c1$, 0, ""), GetVal(c2$, 0, "")
+                COLOR VAL(Parse(c1$)), VAL(Parse(c2$))
             ELSEIF LEN(c1$) > 0 AND LEN(c2$) = 0 THEN
-                COLOR GetVal(c1$, 0, "")
+                COLOR VAL(Parse(c1$))
             ELSEIF LEN(c1$) = 0 AND LEN(c2$) > 0 THEN
-                COLOR , GetVal(c2$, 0, "")
+                COLOR , VAL(Parse(c2$))
             END IF
         ELSE
-            COLOR GetVal(c$, 0, "")
+            COLOR VAL(Parse(c$))
+        END IF
+    ELSEIF LEFT$(L$, 7) = "_BLINK " THEN
+        IF _TRIM$(MID$(L$, 8)) = "ON" THEN
+            _BLINK ON
+        ELSEIF _TRIM$(MID$(L$, 8)) = "OFF" THEN
+            _BLINK OFF
+        ELSE
+            GOTO syntaxerror
         END IF
     ELSEIF LEFT$(L$, 7) = "LOCATE " THEN
         c$ = MID$(L$, 8)
@@ -521,14 +541,14 @@ DO
             c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
             c2$ = MID$(c$, INSTR(c$, ",") + 1)
             IF LEN(c1$) > 0 AND LEN(c2$) > 0 THEN
-                LOCATE GetVal(c1$, 0, ""), GetVal(c2$, 0, "")
+                LOCATE VAL(Parse$(c1$)), VAL(Parse$(c2$))
             ELSEIF LEN(c1$) > 0 AND LEN(c2$) = 0 THEN
-                LOCATE GetVal(c1$, 0, "")
+                LOCATE VAL(Parse$(c1$))
             ELSEIF LEN(c1$) = 0 AND LEN(c2$) > 0 THEN
-                LOCATE , GetVal(c2$, 0, "")
+                LOCATE , VAL(Parse$(c2$))
             END IF
         ELSE
-            LOCATE GetVal(c$, 0, "")
+            LOCATE VAL(Parse$(c$))
         END IF
     ELSEIF LEFT$(L$, 6) = "FILES " THEN
         temp$ = Parse$(MID$(L1$, 7))
@@ -543,20 +563,20 @@ DO
         DIM Comma4%, Comma5%, ArcBeg!, ArcEnd!, d##
         XPos1% = INSTR(L$, " (") + 2
         YPos1% = Comma1% + 1
-        X1% = GetVal(MID$(L$, XPos1%, Comma1% - XPos1%), 0, "")
-        Y1% = GetVal(MID$(L$, YPos1%, Comma2% - YPos1% - 1), 0, "")
+        X1% = VAL(Parse(MID$(L$, XPos1%, Comma1% - XPos1%)))
+        Y1% = VAL(Parse(MID$(L$, YPos1%, Comma2% - YPos1% - 1)))
 
-        Rad% = GetVal(MID$(L$, Comma2% + 1, Comma3% - Comma2% - 1), 0, "")
+        Rad% = VAL(Parse(MID$(L$, Comma2% + 1, Comma3% - Comma2% - 1)))
 
         c$ = LTRIM$(RTRIM$(LEFT$(MID$(L$, Comma3% + 1), 3))) 'Color attribute (variable or constant)
         IF RIGHT$(c$, 1) = "," THEN c$ = LEFT$(c$, LEN(c$) - 1) 'If single-digit attribute
 
-        IF INSTR("0123456789", LEFT$(c$, 1)) > 0 THEN DrawClr% = VAL(c$) ELSE DrawClr% = GetVal(c$, 0, "")
+        IF INSTR("0123456789", LEFT$(c$, 1)) > 0 THEN DrawClr% = VAL(c$) ELSE DrawClr% = VAL(Parse(c$))
 
         EPos% = INSTR(L$, ", , , ")
 
         IF EPos% > 0 THEN
-            EPos% = EPos% + 6: Elipse = GetVal(MID$(L$, EPos%), 0, "")
+            EPos% = EPos% + 6: Elipse = VAL(Parse$(MID$(L$, EPos%)))
         ELSE
             Arc% = INSTR(Comma3% + 1, L$, ",")
 
@@ -564,10 +584,10 @@ DO
                 Comma4% = Arc%
                 Comma5% = INSTR(Comma4% + 1, L$, ",")
 
-                ArcBeg = GetVal(MID$(L$, Comma4% + 1, Comma5% - Comma4% - 1), 0, "") ': PRINT "ArcBeg:"; ArcBeg;   '* * * * Test PRINT
-                ArcEnd = GetVal(MID$(L$, Comma5% + 1), 0, "") ': PRINT " ArcEnd:"; ArcEnd;
+                ArcBeg = VAL(Parse$(MID$(L$, Comma4% + 1, Comma5% - Comma4% - 1))) ': PRINT "ArcBeg:"; ArcBeg;   '* * * * Test PRINT
+                ArcEnd = VAL(Parse$(MID$(L$, Comma5% + 1))) ': PRINT " ArcEnd:"; ArcEnd;
 
-                IF INSTR(Comma5% + 1, L$, ",") > 0 THEN EPos% = INSTR(Comma5% + 1, L$, ",") + 1: Elipse = GetVal(MID$(L$, EPos%), 0, "")
+                IF INSTR(Comma5% + 1, L$, ",") > 0 THEN EPos% = INSTR(Comma5% + 1, L$, ",") + 1: Elipse = VAL(Parse$(MID$(L$, EPos%)))
             END IF
         END IF
 
@@ -580,9 +600,7 @@ DO
     ELSEIF L$ = "SLEEP" THEN
         SLEEP
     ELSEIF LEFT$(L$, 6) = "SLEEP " THEN
-        IF GetVal(MID$(L$, 7), 0, "") > 0 THEN
-            SLEEP GetVal(MID$(L$, 7), 0, "")
-        END IF
+        SLEEP VAL(Parse$(MID$(L$, 7)))
     ELSEIF L$ = "PRINT" OR L$ = "?" THEN
         PRINT
     ELSEIF LEFT$(L$, 6) = "PRINT " OR LEFT$(L$, 1) = "?" THEN
@@ -616,15 +634,21 @@ DO
     ELSEIF L$ = "END" THEN
         IF running THEN running = false
     ELSEIF LEFT$(L$, 6) = "INPUT " THEN
-        DIM varName$, d$
+        DIM varName$, d$, d%
         varName$ = MID$(L1$, 7)
         varIndex = addVar(varName$)
         IF vars(varIndex).type = varTypeSTRING THEN
             INPUT "", d$
             strings(varIndex) = d$
         ELSE
-            INPUT "", d##
-            nums(varIndex) = d##
+            SELECT CASE vars(varIndex).type
+                CASE varTypeINTEGER
+                    INPUT "", d%
+                    nums(varIndex) = d%
+                CASE ELSE
+                    INPUT "", d##
+                    nums(varIndex) = d##
+            END SELECT
         END IF
     ELSEIF L$ = "DO" THEN
         IF running THEN doLine = currentLine
@@ -649,15 +673,7 @@ DO
             END IF
         END IF
     ELSEIF LEFT$(L$, 7) = "SCREEN " THEN
-        SELECT CASE VAL(MID$(L$, 8))
-            CASE 0 TO 2, 7 TO 13
-                CurrentSCREEN% = VAL(MID$(L$, 8))
-                SCREEN CurrentSCREEN%
-            CASE ELSE
-                PRINT "Invalid mode."
-        END SELECT
-    ELSEIF LEFT$(L$, 6) = "SCREEN" THEN
-        PRINT CurrentSCREEN%
+        SCREEN VAL(Parse$(MID$(L$, 8)))
     ELSEIF L$ = "END IF" THEN
         IF running THEN
             IF ifLine = 0 THEN
@@ -673,6 +689,7 @@ DO
         ELSE
             IF RIGHT$(L$, 5) <> " THEN" THEN GOTO syntaxerror
             DIM i$, i1$, i2$, s$, r AS _BYTE
+            DIM i1##, i2##, i1isText AS _BYTE, i2isText AS _BYTE
 
             ifLine = currentLine
 
@@ -691,14 +708,35 @@ DO
             i1$ = LEFT$(i$, INSTR(i$, s$) - 1)
             i2$ = MID$(i$, INSTR(i$, s$) + 1)
 
+            i1$ = Parse$(i1$)
+            i1## = VAL(i1$)
+            IF isNumber(i1$) THEN i1isText = false ELSE i1isText = true
+            i2$ = Parse$(i2$)
+            i2## = VAL(i2$)
+            IF isNumber(i2$) THEN i2isText = false ELSE i2isText = true
+
+            IF i1isText <> i2isText THEN throwError 13: GOTO Parse.Done
+
             r = false
             SELECT CASE s$
                 CASE "="
-                    IF GetVal(i1$, 0, "") = GetVal(i2$, 0, "") THEN r = true
+                    IF i1isText THEN
+                        IF Parse$(i1$) = Parse$(i2$) THEN r = true
+                    ELSE
+                        IF i1## = i2## THEN r = true
+                    END IF
                 CASE ">"
-                    IF GetVal(i1$, 0, "") > GetVal(i2$, 0, "") THEN r = true
+                    IF i1isText THEN
+                        IF Parse$(i1$) > Parse$(i2$) THEN r = true
+                    ELSE
+                        IF i1## > i2## THEN r = true
+                    END IF
                 CASE "<"
-                    IF GetVal(i1$, 0, "") < GetVal(i2$, 0, "") THEN r = true
+                    IF i1isText THEN
+                        IF Parse$(i1$) < Parse$(i2$) THEN r = true
+                    ELSE
+                        IF i1## < i2## THEN r = true
+                    END IF
             END SELECT
 
             IF r = false THEN
@@ -1537,10 +1575,12 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
             IF element(j) = op(i) THEN
                 hasOperator%% = true
                 l = 1
-                DO UNTIL LEN(_TRIM$(element(j - l))) > 0 AND INSTR(validOP$, element(j - l)) = 0
-                    l = l + 1
-                    IF j - l < 1 THEN EXIT FUNCTION
-                LOOP
+                IF j - l > 0 THEN
+                    DO UNTIL LEN(_TRIM$(element(j - l))) > 0 AND INSTR(validOP$, element(j - l)) = 0
+                        l = l + 1
+                        IF j - l < 1 THEN EXIT FUNCTION
+                    LOOP
+                END IF
                 IF isNumber(element(j - l)) THEN
                     op1## = VAL(element(j - l))
                 ELSE
@@ -1549,10 +1589,12 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                 END IF
                 db_echo "element(j - l) = " + element(j - l)
                 m = 1
-                DO UNTIL LEN(_TRIM$(element(j + m))) > 0 AND INSTR(validOP$, element(j + m)) = 0
-                    m = m + 1
-                    IF j + m > totalElements THEN EXIT FUNCTION
-                LOOP
+                IF j + m <= totalElements THEN
+                    DO UNTIL LEN(_TRIM$(element(j + m))) > 0 AND INSTR(validOP$, element(j + m)) = 0
+                        m = m + 1
+                        IF j + m > totalElements THEN EXIT FUNCTION
+                    LOOP
+                END IF
                 IF isNumber(element(j + m)) THEN
                     op2## = VAL(element(j + m))
                 ELSE
