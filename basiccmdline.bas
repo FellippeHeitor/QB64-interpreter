@@ -122,7 +122,6 @@ DATA _strcmp,_autodisplay,_shr,_shl,_deflate$,_inflate$
 DATA _readbit,_setbit,_resetbit,_togglebit
 DATA *end*
 
-SCREEN CurrentSCREEN%
 DO
     k = _KEYHIT
 
@@ -673,7 +672,8 @@ DO
             END IF
         END IF
     ELSEIF LEFT$(L$, 7) = "SCREEN " THEN
-        SCREEN VAL(Parse$(MID$(L$, 8)))
+        CurrentSCREEN% = VAL(Parse$(MID$(L$, 8)))
+        SCREEN CurrentSCREEN%
     ELSEIF L$ = "END IF" THEN
         IF running THEN
             IF ifLine = 0 THEN
