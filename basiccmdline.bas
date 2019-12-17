@@ -6,10 +6,10 @@ CONST true = -1, false = NOT true
 
 DIM SHARED debugging AS _BYTE
 debugging = true
+'ON ERROR GOTO oops
 
 IF debugging = false THEN
     _CONSOLE OFF
-    ON ERROR GOTO oops
 ELSE
     _SCREENMOVE _SCREENX + 800, _SCREENY
 END IF
@@ -46,11 +46,13 @@ REDIM SHARED strings(0) AS STRING
 REDIM SHARED nums(0) AS _FLOAT
 REDIM SHARED program(0) AS STRING
 DIM SHARED totalVars AS _UNSIGNED LONG, varType_DEFAULT AS _BYTE
-DIM SHARED thisScope$, currentLine AS _UNSIGNED LONG
+DIM SHARED thisScope$, currentLine AS _UNSIGNED LONG, lineThatErrored AS _UNSIGNED LONG
 DIM varIndex AS _UNSIGNED LONG, i AS _UNSIGNED LONG
 DIM doLine AS _UNSIGNED LONG, loopLine AS _UNSIGNED LONG
 DIM ifLine AS _UNSIGNED LONG
-DIM k AS LONG, externalLimit AS INTEGER
+DIM SHARED errorHappened AS _BYTE
+DIM SHARED k AS LONG
+DIM externalLimit AS INTEGER
 DIM temp$, L$, L1$, saveFile$, q AS STRING * 1, k$
 DIM MyBad AS _BYTE, Comma1 AS INTEGER, Comma2 AS INTEGER, Comma3 AS INTEGER
 DIM SHARED running AS _BYTE, loaded AS _BYTE, loadedFile$
@@ -143,7 +145,9 @@ DO
 
     L1$ = LTRIM$(RTRIM$(L1$))
     L$ = UCASE$(L1$)
-    IF LEFT$(L$, 5) = "LOAD " THEN
+    IF isNumber(LEFT$(L$, INSTR(L$, CHR$(32)) - 1)) THEN
+        PRINT "Not yet implemented"
+    ELSEIF LEFT$(L$, 5) = "LOAD " THEN
         tryWithExtension:
         IF NOT running THEN
             IF _FILEEXISTS(MID$(L1$, 6)) THEN
@@ -756,21 +760,12 @@ DO
     IF externalLimit > 0 AND running THEN _LIMIT externalLimit
 LOOP
 
-oops:
-IF MyBad THEN RESUME NEXT
-
-PRINT
-PRINT "("; _ERRORLINE; ") Error #"; ERR;
-IF running THEN
-    PRINT " on line"; currentLine
-    running = false
-ELSE
-    PRINT
-END IF
-RESUME Parse.Done
+'oops:
+'IF MyBad THEN RESUME NEXT
+'RESUME Parse.Done
 
 FUNCTION addVar~& (varName$)
-    DIM found AS _BYTE
+    DIM found AS _UNSIGNED LONG
 
     'check if var exists
     found = searchVar(varName$)
@@ -838,106 +833,6 @@ FUNCTION searchVar~& (__varName$)
 
     varName$ = __varName$
 
-    ''DIM bracket1 AS LONG, bracket2 AS LONG
-    ''bracket1 = INSTR(varName$, "(")
-    ''IF bracket1 > 0 THEN
-    ''    FOR i = LEN(varName$) TO 1 STEP -1
-    ''        IF ASC(varName$, i) = 41 THEN
-    ''            bracket2 = i
-    ''            EXIT FOR
-    ''        END IF
-    ''    NEXT
-    ''END IF
-
-    ''IF bracket1 > 0 AND bracket2 > 0 THEN
-    ''    'array or function
-    ''    db_echo "Array or function"
-    ''    temp$ = MID$(varName$, bracket1 + 1, bracket2 - bracket1 - 1)
-    ''    IF LEFT$(temp$, 1) = CHR$(34) THEN
-    ''        'string literal
-    ''        temp$ = MID$(temp$, 2)
-    ''        IF RIGHT$(temp$, 1) = CHR$(34) THEN
-    ''            temp$ = LEFT$(temp$, LEN(temp$) - 1)
-    ''        END IF
-    ''        isString = true
-    ''    ELSE
-    ''    END IF
-
-    ''    SELECT CASE LCASE$(LTRIM$(RTRIM$(LEFT$(varName$, bracket1 - 1))))
-    ''        CASE "val"
-    ''            IF isString = false THEN ERROR 5
-    ''            temp## = VAL(temp$)
-    ''            varName$ = "val"
-    ''            special = true
-    ''        CASE "cos"
-    ''            IF isString THEN ERROR 5
-    ''            temp## = COS(temp##)
-    ''            varName$ = "cos"
-    ''            special = true
-    ''        CASE "len"
-    ''            IF isString = false THEN ERROR 5
-    ''            temp## = LEN(temp$)
-    ''            varName$ = "len"
-    ''            special = true
-    ''        CASE "asc"
-    ''            IF isString = false THEN ERROR 5
-    ''            temp## = ASC(temp$)
-    ''            varName$ = "asc"
-    ''            special = true
-    ''        CASE "sin"
-    ''            IF isString THEN ERROR 5
-    ''            temp## = SIN(temp##)
-    ''            varName$ = "sin"
-    ''            special = true
-    ''        CASE "int"
-    ''            IF isString THEN ERROR 5
-    ''            temp## = INT(temp##)
-    ''            varName$ = "int"
-    ''            special = true
-    ''        CASE "chr$"
-    ''            IF isString THEN ERROR 5
-    ''            temp$ = CHR$(temp##)
-    ''            varName$ = "chr$"
-    ''            special = true
-    ''    END SELECT
-    ''ELSE
-    ''    'special cases
-    ''    IF LCASE$(LTRIM$(RTRIM$(varName$))) = "rnd" THEN
-    ''        temp## = RND
-    ''        special = true
-    ''    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "timer" THEN
-    ''        temp## = TIMER
-    ''        special = true
-    ''    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "time$" THEN
-    ''        temp$ = TIME$
-    ''        special = true
-    ''    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "inkey$" THEN
-    ''        temp$ = INKEY$
-    ''        special = true
-    ''    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "date$" THEN
-    ''        temp$ = DATE$
-    ''        special = true
-    ''    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_width" THEN
-    ''        temp## = _WIDTH
-    ''        special = true
-    ''    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_height" THEN
-    ''        temp## = _HEIGHT
-    ''        special = true
-    ''    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousex" THEN
-    ''        temp## = _MOUSEX
-    ''        special = true
-    ''    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousey" THEN
-    ''        temp## = _MOUSEY
-    ''        special = true
-    ''    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousebutton(1)" THEN
-    ''        temp## = _MOUSEBUTTON(1)
-    ''        special = true
-    ''    ELSEIF LCASE$(LTRIM$(RTRIM$(varName$))) = "_mousebutton(2)" THEN
-    ''        temp## = _MOUSEBUTTON(2)
-    ''        special = true
-    ''    END IF
-    ''END IF
-
     'check if var exists
     FOR i = 1 TO totalVars
         IF LCASE$(LTRIM$(RTRIM$(vars(i).name))) = LCASE$(LTRIM$(RTRIM$(varName$))) THEN
@@ -947,11 +842,6 @@ FUNCTION searchVar~& (__varName$)
     NEXT
 
     IF found THEN searchVar~& = i
-
-    ''IF special AND i <= UBOUND(vars) THEN
-    ''    nums(i) = temp##
-    ''    strings(i) = temp$
-    ''END IF
 END FUNCTION
 
 FUNCTION load%% (file$)
@@ -1004,6 +894,7 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
     db_echo "entering getval(): " + __c$
 
     c$ = LTRIM$(RTRIM$(__c$))
+    foundAsText = false
 
     IF LEFT$(c$, 1) = CHR$(34) THEN
         db_echo "literal string"
@@ -1158,9 +1049,9 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
                     foundAsText = true
                     textReturn$ = ENVIRON$(temp$)
                 CASE "_errorline"
-                    GetVal## = _ERRORLINE
+                    GetVal## = lineThatErrored
                 CASE "_inclerrorline"
-                    GetVal## = _INCLERRORLINE
+                    'GetVal## = _INCLERRORLINE
                 CASE "_acceptfiledrop"
                     GetVal## = _ACCEPTFILEDROP
                 CASE "_totaldroppedfiles"
@@ -1370,7 +1261,7 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
                 CASE "abs"
                     GetVal## = ABS(temp##)
                 CASE "erl"
-                    GetVal## = ERL
+                    GetVal## = lineThatErrored
                 CASE "err"
                     GetVal## = ERR
                 CASE "ucase$"
@@ -1471,159 +1362,6 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
     END IF
 END FUNCTION
 
-'FUNCTION doMath$ (__v$)
-'    DIM v$, v1$, v2$, temp$
-'    DIM v1##, v2##, iQ AS _BYTE
-'    DIM returnAsText AS _BYTE, textReturn$
-'    DIM returnAsText2 AS _BYTE, textReturn2$
-'    DIM tempQuote$, i AS _UNSIGNED LONG
-'    DIM s$
-'    DIM maxBlocks AS _UNSIGNED LONG, totalBrackets AS _UNSIGNED LONG
-'    DIM totalOperations
-'    DIM totalOpeningBrackets AS _UNSIGNED LONG, totalClosingBrackets AS _UNSIGNED LONG
-
-'    db_echo " -------------- doing math on " + v$
-
-'    TYPE blocks
-'        original AS STRING
-'        solved AS STRING
-'    END TYPE
-
-'    REDIM block(1000) AS blocks
-'    REDIM operation(1000) AS operations
-
-'    maxBlocks = 1
-'    block(1).original = __v$
-
-'    'count brackets and operations
-'    iQ = false
-'    FOR i = 1 TO LEN(v$)
-'        IF ASC(v$, i) = 40 AND iQ = false THEN
-'            totalBrackets = totalBrackets + 1
-'            totalOpeningBrackets = totalOpeningBrackets + 1
-'        ELSEIF ASC(v$, i) = 41 AND iQ = false THEN
-'            totalClosingBrackets = totalClosingBrackets + 1
-'        ELSEIF ASC(v$, i) = 34 THEN
-'            iQ = NOT iQ
-'        ELSEIF iQ = false THEN
-'            SELECT CASE ASC(v$, i)
-'                CASE 42, 43, 45, 47, 61, 94 '*, +, -, /, =, ^
-'                    totalOperations = totalOperations + 1
-'                    IF totalOperations > UBOUND(operation) THEN
-'                        REDIM _PRESERVE operation(UBOUND(operation) + 999) AS operations
-'                    END IF
-'                    operation(totalOperations).position = i
-'                    operation(totalOperations).operator = MID$(v$, i, 1)
-'            END SELECT
-'        END IF
-'    NEXT
-
-'    IF totalOpeningBrackets <> totalClosingBrackets THEN
-'        IF totalOpeningBrackets > totalClosingBrackets THEN temp$ = ")"
-'        IF totalClosingBrackets > totalOpeningBrackets THEN temp$ = "("
-'        db_echo "Invalid expression. Missing " + temp$
-'        EXIT FUNCTION
-'    END IF
-
-'    IF firstOperator(v$) > 1 THEN
-'        s$ = MID$(v$, firstOperator(v$), 1)
-'        db_echo "found operator: " + s$
-'    ELSE
-'        v1## = GetVal(v$, returnAsText, textReturn$)
-'        IF returnAsText THEN
-'            doMath$ = textReturn$
-'        ELSE
-'            doMath$ = LTRIM$(RTRIM$(STR$(GetVal(v$, 0, ""))))
-'        END IF
-'        EXIT FUNCTION
-'    END IF
-
-'    v1$ = LEFT$(v$, INSTR(v$, s$) - 1)
-'    v2$ = MID$(v$, firstOperator(v$) + 1)
-
-'    v1## = GetVal(v1$, returnAsText, textReturn$)
-'    v2## = GetVal(v2$, returnAsText2, textReturn2$)
-'    IF debugging THEN
-'        _ECHO "found    " + v1$ + " " + s$ + " " + v2$
-'        _ECHO "getval():" + STR$(v1##) + "," + STR$(v2##)
-'        IF returnAsText THEN _ECHO "getval(): v1$ as text = " + textReturn$
-'        IF returnAsText2 THEN _ECHO "getval(): v2$ as text = " + textReturn2$
-'    END IF
-
-'    SELECT CASE s$
-'        CASE "+"
-'            IF returnAsText THEN
-'                temp$ = textReturn$ + textReturn2$
-'            ELSE
-'                temp$ = STR$(v1## + v2##)
-'            END IF
-'        CASE "-"
-'            IF returnAsText OR returnAsText2 THEN ERROR 5
-'            temp$ = STR$(v1## - v2##)
-'        CASE "*"
-'            IF returnAsText OR returnAsText2 THEN ERROR 5
-'            temp$ = STR$(v1## * v2##)
-'        CASE "/"
-'            IF returnAsText OR returnAsText2 THEN ERROR 5
-'            temp$ = STR$(v1## / v2##)
-'        CASE "^"
-'            IF returnAsText OR returnAsText2 THEN ERROR 5
-'            temp$ = STR$(v1## ^ v2##)
-'        CASE "="
-'            IF returnAsText OR returnAsText2 THEN
-'                temp$ = STR$(textReturn$ = textReturn2$)
-'            ELSE
-'                temp$ = STR$(v1## = v2##)
-'            END IF
-'    END SELECT
-
-'    db_echo "temp$=" + temp$
-
-'    DO WHILE firstOperator(v2$) > 1
-'        s$ = MID$(v2$, firstOperator(v2$), 1)
-'        v2$ = MID$(v2$, firstOperator(v2$) + 1)
-'        db_echo "passing " + temp$ + s$ + v2$
-'        IF returnAsText THEN tempQuote$ = CHR$(34) ELSE tempQuote$ = ""
-'        temp$ = doMath$(tempQuote$ + temp$ + tempQuote$ + s$ + v2$)
-'        v2$ = MID$(v2$, firstOperator(v2$) + LEN(v2$))
-'    LOOP
-
-'    doMath$ = LTRIM$(RTRIM$(temp$))
-'END FUNCTION
-
-''FUNCTION inQuote%% (__text$, __position AS _UNSIGNED LONG)
-''    DIM text$, position AS _UNSIGNED LONG
-''    DIM openQuote AS _BYTE
-''    DIM i AS _UNSIGNED LONG
-
-''    text$ = __text$
-''    position = __position
-
-''    IF position > LEN(text$) THEN position = LEN(text$)
-
-''    FOR i = 1 TO position
-''        IF ASC(text$, i) = 34 THEN openQuote = NOT openQuote
-''    NEXT
-
-''    inQuote%% = openQuote
-''END FUNCTION
-
-''FUNCTION firstOperator& (v$)
-''    DIM i AS LONG, op$
-
-''    op$ = "+-*/^="
-
-''    FOR i = 1 TO LEN(v$)
-''        IF INSTR(op$, MID$(v$, i, 1)) THEN
-''            IF NOT inQuote%%(v$, i) THEN
-''                firstOperator = i
-''                EXIT FUNCTION
-''            END IF
-''        END IF
-''    NEXT
-''END FUNCTION
-
-
 FUNCTION Parse$ (__inputExpr AS STRING)
     'Adapted from https://www.codeproject.com/Articles/1205435/Parsing-Mathematical-Expressions-in-VB-NET-Missi
     ' Call this routine to perform the actual mathematic expression parsing
@@ -1634,6 +1372,8 @@ FUNCTION Parse$ (__inputExpr AS STRING)
     DIM returnAsText AS _BYTE, textReturn AS STRING
     REDIM oe(0) AS _UNSIGNED LONG
     REDIM strs(0) AS STRING
+
+    db_echo "------------------ Parsing: " + __inputExpr
 
     inputExpr = "(" + __inputExpr + ")"
 
@@ -1711,7 +1451,10 @@ FUNCTION Parse$ (__inputExpr AS STRING)
     FOR index = 1 TO totalStrings
         'OC: Compute the result for the current part of the expression
         DIM Result AS STRING
+        errorHappened = false
         Result = STR$(Compute(strs(index), returnAsText, textReturn))
+        IF errorHappened THEN EXIT FUNCTION
+        IF returnAsText THEN Result = " " + textReturn
 
         'OC: Iterate through all succeeding parts of the expression
         FOR n = index TO totalStrings
@@ -1722,7 +1465,9 @@ FUNCTION Parse$ (__inputExpr AS STRING)
     NEXT
     'OC: Compute the numerical value of the last part (e.g. the numerical resulting value of the entire expression)
     'OC: and return this value at the end of the following routine execution.
+    errorHappened = false
     temp$ = STR$(Compute(strs(totalStrings), returnAsText, textReturn))
+    IF errorHappened THEN EXIT FUNCTION
     IF returnAsText THEN
         Parse$ = textReturn
     ELSE
@@ -1738,7 +1483,8 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
     DIM quote AS _BYTE
     DIM tempElement AS STRING, op1##, op2##, result##
     DIM txtop1$, txtop2$, txtresult$
-    DIM getvalTxtRet AS _BYTE, getvalTxtResult AS STRING
+    DIM getvalTxtRet1 AS _BYTE, getvalTxtResult1 AS STRING
+    DIM getvalTxtRet2 AS _BYTE, getvalTxtResult2 AS STRING
     REDIM element(1000) AS STRING
     STATIC op(6) AS STRING, validOP$
 
@@ -1798,8 +1544,8 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                 IF isNumber(element(j - l)) THEN
                     op1## = VAL(element(j - l))
                 ELSE
-                    op1## = GetVal(element(j - l), getvalTxtRet, getvalTxtResult)
-                    IF getvalTxtRet THEN foundAsText = true: txtop1$ = getvalTxtResult
+                    op1## = GetVal(element(j - l), getvalTxtRet1, getvalTxtResult1)
+                    IF getvalTxtRet1 THEN txtop1$ = getvalTxtResult1
                 END IF
                 db_echo "element(j - l) = " + element(j - l)
                 m = 1
@@ -1810,33 +1556,48 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                 IF isNumber(element(j + m)) THEN
                     op2## = VAL(element(j + m))
                 ELSE
-                    op2## = GetVal(element(j + m), getvalTxtRet, getvalTxtResult)
-                    IF getvalTxtRet THEN foundAsText = true: txtop2$ = getvalTxtResult
+                    op2## = GetVal(element(j + m), getvalTxtRet2, getvalTxtResult2)
+                    IF getvalTxtRet2 THEN txtop2$ = getvalTxtResult2
                 END IF
                 db_echo "element(j + m) = " + element(j + m)
                 db_echo "op1=" + STR$(op1##) + "; oper=" + op(i) + "; op2=" + STR$(op2##)
                 db_echo "txtop1=" + txtop1$ + "; oper=" + op(i) + "; txtop2=" + txtop2$
                 SELECT CASE op(i)
                     CASE "^"
-                        IF foundAsText THEN ERROR 5
+                        IF getvalTxtRet1 OR getvalTxtRet2 THEN throwError 13: EXIT FUNCTION
+                        foundAsText = false
                         result## = op1## ^ op2##
                     CASE "*"
-                        IF foundAsText THEN ERROR 5
+                        IF getvalTxtRet1 OR getvalTxtRet2 THEN throwError 13: EXIT FUNCTION
+                        foundAsText = false
                         result## = op1## * op2##
                     CASE "/"
-                        IF foundAsText THEN ERROR 5
+                        IF getvalTxtRet1 OR getvalTxtRet2 THEN throwError 13: EXIT FUNCTION
+                        foundAsText = false
                         result## = op1## / op2##
                     CASE "+"
-                        result## = op1## + op2##
-                        txtresult$ = txtop1$ + txtop2$
-                    CASE "-"
-                        IF foundAsText THEN ERROR 5
-                        result## = op1## - op2##
-                    CASE "="
-                        IF foundAsText THEN
-                            result## = (txtop1$ = txtop2$)
+                        IF getvalTxtRet1 AND getvalTxtRet2 THEN
+                            txtresult$ = txtop1$ + txtop2$
+                            foundAsText = true
+                        ELSEIF NOT getvalTxtRet1 AND NOT getvalTxtRet2 THEN
+                            result## = op1## + op2##
+                            foundAsText = false
                         ELSE
+                            throwError 13: EXIT FUNCTION
+                        END IF
+                    CASE "-"
+                        IF getvalTxtRet1 OR getvalTxtRet2 THEN throwError 13: EXIT FUNCTION
+                        result## = op1## - op2##
+                        foundAsText = false
+                    CASE "="
+                        IF getvalTxtRet1 AND getvalTxtRet2 THEN
+                            result## = (txtop1$ = txtop2$)
+                            foundAsText = true
+                        ELSEIF NOT getvalTxtRet1 AND NOT getvalTxtRet2 THEN
                             result## = (op1## = op2##)
+                            foundAsText = false
+                        ELSE
+                            throwError 13: EXIT FUNCTION
                         END IF
                 END SELECT
                 db_echo "temp result## =" + STR$(result##)
@@ -1870,12 +1631,13 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
         IF isNumber(element(1)) THEN
             op1## = VAL(element(1))
         ELSE
-            op1## = GetVal(element(1), getvalTxtRet, getvalTxtResult)
+            op1## = GetVal(element(1), getvalTxtRet1, getvalTxtResult1)
         END IF
-        IF getvalTxtRet THEN
+        IF getvalTxtRet1 THEN
             foundAsText = true
-            textReturn$ = getvalTxtResult
+            textReturn$ = getvalTxtResult1
         ELSE
+            foundAsText = false
             Compute## = op1##
         END IF
     ELSE
@@ -1971,4 +1733,15 @@ END FUNCTION
 
 SUB db_echo (text$)
     IF debugging THEN _ECHO text$
+END SUB
+
+SUB throwError (code AS INTEGER)
+    IF running THEN PRINT "("; _TRIM$(STR$(_ERRORLINE)); ") "
+    PRINT "Error #"; code;
+    IF running THEN
+        PRINT " on line"; currentLine
+        lineThatErrored = currentLine
+        running = false
+    END IF
+    errorHappened = true
 END SUB
