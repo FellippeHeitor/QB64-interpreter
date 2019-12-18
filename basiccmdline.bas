@@ -56,7 +56,6 @@ DIM externalLimit AS INTEGER
 DIM temp$, L$, L1$, saveFile$, q AS STRING * 1, k$
 DIM MyBad AS _BYTE, Comma1 AS INTEGER, Comma2 AS INTEGER, Comma3 AS INTEGER
 DIM SHARED running AS _BYTE, loaded AS _BYTE, loadedFile$
-DIM SHARED CurrentSCREEN%
 
 thisScope$ = "MAIN MODULE"
 varType_DEFAULT = varTypeSINGLE
@@ -409,7 +408,7 @@ DO
                 prevFG = _DEFAULTCOLOR
                 prevBG = _BACKGROUNDCOLOR
 
-                IF _PIXELSIZE = 0 THEN
+                IF _PIXELSIZE(_DEST) = 0 THEN
                     screenMaxCols = _WIDTH
                 ELSE
                     screenMaxCols = _WIDTH / _PRINTWIDTH("W")
@@ -555,7 +554,7 @@ DO
     ELSEIF L$ = "FILES" THEN
         FILES
     ELSEIF LEFT$(L$, 8) = "CIRCLE (" THEN
-        IF CurrentSCREEN% = 0 THEN PRINT "Invalid mode.": running = false: GOTO Parse.Done
+        IF _PIXELSIZE(_DEST) = 0 THEN throwError 5: GOTO Parse.Done
         Comma1% = INSTR(L$, ","): Comma2% = INSTR(Comma1% + 1, L$, ","): Comma3% = INSTR(Comma2% + 1, L$, ",")
 
         DIM XPos1%, YPos1%, X1%, Y1%, Rad%, DrawClr%, EPos%, Elipse!, Arc%
@@ -672,8 +671,7 @@ DO
             END IF
         END IF
     ELSEIF LEFT$(L$, 7) = "SCREEN " THEN
-        CurrentSCREEN% = VAL(Parse$(MID$(L$, 8)))
-        SCREEN CurrentSCREEN%
+        SCREEN VAL(Parse$(MID$(L$, 8)))
     ELSEIF L$ = "END IF" THEN
         IF running THEN
             IF ifLine = 0 THEN
