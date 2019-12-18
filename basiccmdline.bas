@@ -553,6 +553,8 @@ DO
         FILES temp$
     ELSEIF L$ = "FILES" THEN
         FILES
+    ELSEIF LEFT$(L$, 9) = "_SNDPLAY " THEN
+        _SNDPLAY VAL(Parse$(MID$(L$, 10)))
     ELSEIF LEFT$(L$, 8) = "CIRCLE (" THEN
         IF _PIXELSIZE(_DEST) = 0 THEN throwError 5: GOTO Parse.Done
         Comma1% = INSTR(L$, ","): Comma2% = INSTR(Comma1% + 1, L$, ","): Comma3% = INSTR(Comma2% + 1, L$, ",")
