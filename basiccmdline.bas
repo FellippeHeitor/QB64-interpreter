@@ -675,10 +675,14 @@ DO
     ELSEIF LEFT$(L$, 11) = "LOOP UNTIL " THEN
         IF VAL(Parse$(MID$(L$, 12))) = 0 THEN
             GOTO treatAsLoop
+        ELSE
+            currentDoLevel = currentDoLevel - 1
         END IF
     ELSEIF LEFT$(L$, 11) = "LOOP WHILE " THEN
         IF VAL(Parse$(MID$(L$, 12))) <> 0 THEN
             GOTO treatAsLoop
+        ELSE
+            currentDoLevel = currentDoLevel - 1
         END IF
     ELSEIF L$ = "EXIT DO" THEN
         IF running THEN
