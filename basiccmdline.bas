@@ -5,7 +5,7 @@ $CONSOLE
 CONST true = -1, false = NOT true
 
 DIM SHARED debugging AS _BYTE
-debugging = true
+debugging = false
 'ON ERROR GOTO oops
 
 IF debugging = false THEN
@@ -48,7 +48,8 @@ REDIM SHARED program(0) AS STRING
 DIM SHARED totalVars AS _UNSIGNED LONG, varType_DEFAULT AS _BYTE
 DIM SHARED thisScope$, currentLine AS _UNSIGNED LONG, lineThatErrored AS _UNSIGNED LONG
 DIM varIndex AS _UNSIGNED LONG, i AS _UNSIGNED LONG
-DIM doLine AS _UNSIGNED LONG, loopLine AS _UNSIGNED LONG
+DIM doLine(100) AS _UNSIGNED LONG, loopLine(100) AS _UNSIGNED LONG
+DIM currentDoLevel AS INTEGER
 DIM ifLine AS _UNSIGNED LONG
 DIM SHARED errorHappened AS _BYTE
 DIM SHARED k AS LONG
@@ -503,6 +504,8 @@ DO
         IF NOT running THEN
             IF loaded THEN
                 currentLine = 0
+                currentDoLevel = 0
+                ifLine = 0
                 externalLimit = 0
                 running = true
             ELSE
@@ -651,26 +654,54 @@ DO
             END SELECT
         END IF
     ELSEIF L$ = "DO" THEN
-        IF running THEN doLine = currentLine
-    ELSEIF L$ = "LOOP" THEN
         IF running THEN
-            loopLine = currentLine
-            IF doLine > 0 THEN currentLine = doLine
+            currentDoLevel = currentDoLevel + 1
+            doLine(currentDoLevel) = currentLine
+        ELSE
+            PRINT "Not valid in immediate mode."
+            GOTO Parse.Done
+        END IF
+    ELSEIF L$ = "LOOP" THEN
+        treatAsLoop:
+        IF running AND currentDoLevel > 0 THEN
+            loopLine(currentDoLevel) = currentLine
+            IF doLine(currentDoLevel) > 0 THEN currentLine = doLine(currentDoLevel)
+        ELSEIF running AND currentDoLevel = 0 THEN
+            PRINT "LOOP without DO on line"; doLine(currentDoLevel) - 1: running = false: GOTO Parse.Done
+        ELSEIF NOT running THEN
+            PRINT "Not valid in immediate mode."
+            GOTO Parse.Done
+        END IF
+    ELSEIF LEFT$(L$, 11) = "LOOP UNTIL " THEN
+        IF VAL(Parse$(MID$(L$, 12))) = 0 THEN
+            GOTO treatAsLoop
+        END IF
+    ELSEIF LEFT$(L$, 11) = "LOOP WHILE " THEN
+        IF VAL(Parse$(MID$(L$, 12))) <> 0 THEN
+            GOTO treatAsLoop
         END IF
     ELSEIF L$ = "EXIT DO" THEN
         IF running THEN
-            IF loopLine > 0 THEN
-                currentLine = loopLine
+            IF currentDoLevel = 0 THEN
+                PRINT "EXIT DO without DO on line"; currentLine: running = false: GOTO Parse.Done
+            END IF
+
+            IF loopLine(currentDoLevel) > 0 THEN
+                currentLine = loopLine(currentDoLevel)
+                currentDoLevel = currentDoLevel - 1
             ELSE
                 DO
                     currentLine = currentLine + 1
-                    IF currentLine > UBOUND(program) THEN PRINT "DO without LOOP on line"; doLine: running = false: GOTO Parse.Done
+                    IF currentLine > UBOUND(program) THEN PRINT "DO without LOOP on line"; doLine(currentDoLevel) - 1: running = false: GOTO Parse.Done
                     L1$ = program(currentLine)
                     L1$ = LTRIM$(RTRIM$(L1$))
                     L$ = UCASE$(L1$)
-                    IF L$ = "LOOP" THEN doLine = 0: EXIT DO
+                    IF L$ = "LOOP" THEN currentDoLevel = currentDoLevel - 1: EXIT DO
                 LOOP
             END IF
+        ELSE
+            PRINT "Not valid in immediate mode."
+            GOTO Parse.Done
         END IF
     ELSEIF LEFT$(L$, 7) = "SCREEN " THEN
         SCREEN VAL(Parse$(MID$(L$, 8)))
@@ -1524,10 +1555,10 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
     DIM getvalTxtRet1 AS _BYTE, getvalTxtResult1 AS STRING
     DIM getvalTxtRet2 AS _BYTE, getvalTxtResult2 AS STRING
     REDIM element(1000) AS STRING
-    STATIC op(6) AS STRING, validOP$
+    STATIC op(8) AS STRING, validOP$
 
     IF LEN(validOP$) = 0 THEN
-        validOP$ = "^*/+-="
+        validOP$ = "^*/+-=><"
         FOR i = 1 TO LEN(validOP$)
             op(i) = MID$(validOP$, i, 1)
         NEXT
@@ -1637,6 +1668,26 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                             foundAsText = true
                         ELSEIF NOT getvalTxtRet1 AND NOT getvalTxtRet2 THEN
                             result## = (op1## = op2##)
+                            foundAsText = false
+                        ELSE
+                            throwError 13: EXIT FUNCTION
+                        END IF
+                    CASE ">"
+                        IF getvalTxtRet1 AND getvalTxtRet2 THEN
+                            result## = (txtop1$ > txtop2$)
+                            foundAsText = true
+                        ELSEIF NOT getvalTxtRet1 AND NOT getvalTxtRet2 THEN
+                            result## = (op1## > op2##)
+                            foundAsText = false
+                        ELSE
+                            throwError 13: EXIT FUNCTION
+                        END IF
+                    CASE "<"
+                        IF getvalTxtRet1 AND getvalTxtRet2 THEN
+                            result## = (txtop1$ < txtop2$)
+                            foundAsText = true
+                        ELSEIF NOT getvalTxtRet1 AND NOT getvalTxtRet2 THEN
+                            result## = (op1## < op2##)
                             foundAsText = false
                         ELSE
                             throwError 13: EXIT FUNCTION
