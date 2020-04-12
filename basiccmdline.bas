@@ -174,31 +174,40 @@ DO
         END IF
     ELSE
         'look for : separators
-        j = INSTR(L$, ":")
-        IF j > 0 THEN
-            keepLookingForSeparator:
-            quote = false
-            FOR i = 1 TO j
-                IF ASC(L$, i) = 34 THEN quote = NOT quote
-            NEXT
+        IF LEFT$(L$, 3) <> "IF " THEN
+            j = INSTR(L$, ":")
+            IF j > 0 AND j < LEN(L$) THEN
+                keepLookingForSeparator:
+                quote = false
+                FOR i = 1 TO j
+                    IF ASC(L$, i) = 34 THEN quote = NOT quote
+                NEXT
 
-            IF NOT quote THEN
-                continuation$ = _TRIM$(MID$(L1$, j + 1))
-                Ucontinuation$ = _TRIM$(MID$(L$, j + 1))
-                L1$ = _TRIM$(LEFT$(L1$, j - 1))
-                L$ = _TRIM$(LEFT$(L$, j - 1))
-            ELSE
-                j = INSTR(j + 1, L$, ":")
-                IF j > 0 THEN
-                    GOTO keepLookingForSeparator
+                IF NOT quote THEN
+                    continuation$ = _TRIM$(MID$(L1$, j + 1))
+                    Ucontinuation$ = _TRIM$(MID$(L$, j + 1))
+                    L1$ = _TRIM$(LEFT$(L1$, j - 1))
+                    L$ = _TRIM$(LEFT$(L$, j - 1))
                 ELSE
-                    continuation$ = ""
-                    Ucontinuation$ = ""
+                    j = INSTR(j + 1, L$, ":")
+                    IF j > 0 THEN
+                        GOTO keepLookingForSeparator
+                    ELSE
+                        continuation$ = ""
+                        Ucontinuation$ = ""
+                    END IF
                 END IF
+            ELSEIF j = LEN(L$) THEN
+                IF INSTR(L$, " ") > 0 THEN
+                    L$ = LEFT$(L$, LEN(L$) - 1)
+                    L1$ = LEFT$(L1$, LEN(L1$) - 1)
+                ELSE
+                    'likely a label
+                END IF
+            ELSE
+                continuation$ = ""
+                Ucontinuation$ = ""
             END IF
-        ELSE
-            continuation$ = ""
-            Ucontinuation$ = ""
         END IF
 
         IF LEFT$(L$, 5) = "LOAD " THEN
@@ -830,67 +839,27 @@ DO
                 IF ifLine = 0 THEN
                     PRINT "END IF without IF - on line"; currentLine
                     running = false
+                ELSE
+                    ifLine = 0
                 END IF
             ELSE
                 PRINT "Not valid in immediate mode."
             END IF
         ELSEIF LEFT$(L$, 3) = "IF " THEN
-            IF NOT running THEN
-                PRINT "Not valid in immediate mode."
-            ELSE
-                IF RIGHT$(L$, 5) <> " THEN" THEN GOTO syntaxerror
-                DIM i$, i1$, i2$, s$, r AS _BYTE
-                DIM i1##, i2##, i1isText AS _BYTE, i2isText AS _BYTE
+            IF RIGHT$(L$, 5) = " THEN" THEN
+                'IF-THEN-END IF block
+                IF NOT running THEN
+                    PRINT "IF blocks are not valid in immediate mode."
+                    GOTO Parse.Done
+                END IF
+
+                DIM i$
 
                 ifLine = currentLine
 
                 i$ = MID$(L$, 4, LEN(L$) - 8)
 
-                IF INSTR(i$, "=") THEN
-                    s$ = "="
-                ELSEIF INSTR(i$, ">") THEN
-                    s$ = ">"
-                ELSEIF INSTR(i$, "<") THEN
-                    s$ = "<"
-                ELSE
-                    s$ = ""
-                END IF
-
-                i1$ = LEFT$(i$, INSTR(i$, s$) - 1)
-                i2$ = MID$(i$, INSTR(i$, s$) + 1)
-
-                i1$ = Parse$(i1$)
-                i1## = VAL(i1$)
-                IF isNumber(i1$) THEN i1isText = false ELSE i1isText = true
-                i2$ = Parse$(i2$)
-                i2## = VAL(i2$)
-                IF isNumber(i2$) THEN i2isText = false ELSE i2isText = true
-
-                IF i1isText <> i2isText THEN throwError 13: GOTO Parse.Done
-
-                r = false
-                SELECT CASE s$
-                    CASE "="
-                        IF i1isText THEN
-                            IF Parse$(i1$) = Parse$(i2$) THEN r = true
-                        ELSE
-                            IF i1## = i2## THEN r = true
-                        END IF
-                    CASE ">"
-                        IF i1isText THEN
-                            IF Parse$(i1$) > Parse$(i2$) THEN r = true
-                        ELSE
-                            IF i1## > i2## THEN r = true
-                        END IF
-                    CASE "<"
-                        IF i1isText THEN
-                            IF Parse$(i1$) < Parse$(i2$) THEN r = true
-                        ELSE
-                            IF i1## < i2## THEN r = true
-                        END IF
-                END SELECT
-
-                IF r = false THEN
+                IF VAL(Parse(i$)) = 0 THEN 'condition is false
                     DO
                         currentLine = currentLine + 1
                         IF currentLine > UBOUND(program) THEN PRINT "IF without END IF on line"; ifLine: running = false: GOTO Parse.Done
@@ -899,6 +868,35 @@ DO
                         L$ = UCASE$(L1$)
                         IF L$ = "END IF" THEN ifLine = 0: EXIT DO
                     LOOP
+                END IF
+            ELSE
+                'single-line IF statement
+                db_echo "Single-line IF, line" + STR$(currentLine)
+                j = INSTR(L$, " THEN ")
+                findThen:
+                quote = false
+                FOR i = 1 TO j
+                    IF ASC(L$, i) = 34 THEN quote = NOT quote
+                NEXT
+                IF quote THEN
+                    j = INSTR(j + 1, L$, " THEN ")
+                    IF j = 0 THEN
+                        PRINT "Expected: IF condition THEN statements"
+                        IF running THEN running = false
+                        GOTO Parse.Done
+                    END IF
+                ELSE
+                    i$ = MID$(LEFT$(L1$, j), 3)
+                    db_echo "Condition: '" + i$ + "'"
+                    IF VAL(Parse(i$)) <> 0 THEN
+                        db_echo "condition passed! ---------------->"
+                        L$ = MID$(L$, j + 6)
+                        L1$ = MID$(L1$, j + 6)
+                        db_echo "Redoing line as '" + L$ + "'"
+                        GOTO redoThisLine
+                    ELSE
+                        db_echo "condition is false! <----------------"
+                    END IF
                 END IF
             END IF
         ELSEIF INSTR(L$, "=") > 0 THEN
