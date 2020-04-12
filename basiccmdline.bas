@@ -58,7 +58,7 @@ DIM varIndex AS LONG, i AS LONG, j AS LONG, quote AS LONG
 DIM continuation$, Ucontinuation$
 DIM loopControl(100) AS loopControlType
 DIM currentDoLevel AS INTEGER
-DIM ifLine AS LONG
+DIM ifBlock AS LONG
 DIM SHARED errorHappened AS _BYTE
 DIM SHARED k AS LONG
 DIM externalLimit AS INTEGER
@@ -559,7 +559,7 @@ DO
                 IF loaded THEN
                     currentLine = 0
                     currentDoLevel = 0
-                    ifLine = 0
+                    ifBlock = 0
                     externalLimit = 0
                     running = true
                 ELSE
@@ -834,14 +834,37 @@ DO
             END IF
         ELSEIF LEFT$(L$, 7) = "SCREEN " THEN
             SCREEN VAL(Parse$(MID$(L$, 8)))
-        ELSEIF L$ = "END IF" THEN
+        ELSEIF L$ = "ELSE" THEN
             IF running THEN
-                IF ifLine = 0 THEN
-                    PRINT "END IF without IF - on line"; currentLine
-                    running = false
-                ELSE
-                    ifLine = 0
-                END IF
+                'skip "ELSE" block (should have already been skipped in the IF evaluation)
+                DO
+                    j = currentLine
+                    currentLine = currentLine + 1
+                    IF currentLine > UBOUND(program) AND ifBlock > 0 THEN
+                        PRINT "IF without END IF on line"; ifBlock
+                        running = false
+                        GOTO Parse.Done
+                    ELSEIF currentLine > UBOUND(program) THEN
+                        PRINT "ELSE without IF on line"; j
+                        running = false
+                        GOTO Parse.Done
+                    END IF
+                    L1$ = program(currentLine)
+                    L1$ = LTRIM$(RTRIM$(L1$))
+                    L$ = UCASE$(L1$)
+                    IF L$ = "END IF" OR L$ = "ENDIF" THEN ifBlock = 0: EXIT DO
+                    IF L$ = "ELSE" THEN
+                        PRINT "ELSE used more than once on line"; currentLine
+                        running = false
+                        GOTO Parse.Done
+                    END IF
+                LOOP
+            ELSE
+                PRINT "Not valid in immediate mode."
+            END IF
+        ELSEIF L$ = "END IF" OR L$ = "ENDIF" THEN
+            IF running THEN
+                ifBlock = 0
             ELSE
                 PRINT "Not valid in immediate mode."
             END IF
@@ -855,19 +878,20 @@ DO
 
                 DIM i$
 
-                ifLine = currentLine
-
                 i$ = MID$(L$, 4, LEN(L$) - 8)
 
                 IF VAL(Parse(i$)) = 0 THEN 'condition is false
                     DO
                         currentLine = currentLine + 1
-                        IF currentLine > UBOUND(program) THEN PRINT "IF without END IF on line"; ifLine: running = false: GOTO Parse.Done
+                        IF currentLine > UBOUND(program) THEN PRINT "IF without END IF on line"; ifBlock: running = false: GOTO Parse.Done
                         L1$ = program(currentLine)
                         L1$ = LTRIM$(RTRIM$(L1$))
                         L$ = UCASE$(L1$)
-                        IF L$ = "END IF" THEN ifLine = 0: EXIT DO
+                        IF L$ = "END IF" OR L$ = "ENDIF" THEN ifBlock = 0: EXIT DO
+                        IF L$ = "ELSE" THEN EXIT DO
                     LOOP
+                ELSE
+                    ifBlock = 1 'if block evaluated as true
                 END IF
             ELSE
                 'single-line IF statement
