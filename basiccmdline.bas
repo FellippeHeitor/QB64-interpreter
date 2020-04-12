@@ -27,6 +27,13 @@ TYPE vartype
     protected AS _BYTE
 END TYPE
 
+TYPE loopControlType
+    level AS INTEGER
+    firstLine AS LONG
+    loopLine AS LONG
+    condition AS _BYTE '0 = no condition; 1 = DO + condition; 2 = LOOP + condition
+END TYPE
+
 CONST varType_FLOAT = 0
 CONST varTypeSTRING = 1
 CONST varTypeINTEGER = 2
@@ -45,12 +52,12 @@ REDIM SHARED vars(0) AS vartype
 REDIM SHARED strings(0) AS STRING
 REDIM SHARED nums(0) AS _FLOAT
 REDIM SHARED program(0) AS STRING
-DIM SHARED totalVars AS _UNSIGNED LONG, varType_DEFAULT AS _BYTE
-DIM SHARED thisScope$, currentLine AS _UNSIGNED LONG, lineThatErrored AS _UNSIGNED LONG
-DIM varIndex AS _UNSIGNED LONG, i AS _UNSIGNED LONG
-DIM doLine(100) AS _UNSIGNED LONG, loopLine(100) AS _UNSIGNED LONG
+DIM SHARED totalVars AS LONG, varType_DEFAULT AS _BYTE
+DIM SHARED thisScope$, currentLine AS LONG, lineThatErrored AS LONG
+DIM varIndex AS LONG, i AS LONG
+DIM loopControl(100) AS loopControlType
 DIM currentDoLevel AS INTEGER
-DIM ifLine AS _UNSIGNED LONG
+DIM ifLine AS LONG
 DIM SHARED errorHappened AS _BYTE
 DIM SHARED k AS LONG
 DIM externalLimit AS INTEGER
@@ -125,7 +132,7 @@ DATA *end*
 DO
     k = _KEYHIT
 
-    IF (k = ASC("C") OR k = ASC("c")) AND (_KEYDOWN(100305) OR _KEYDOWN(100306)) THEN
+    IF (ABS(k) = ASC("C") OR ABS(k) = ASC("c")) AND (_KEYDOWN(100305) OR _KEYDOWN(100306)) THEN
         PRINT "Break."
         IF running THEN running = false
         _KEYCLEAR
@@ -144,7 +151,8 @@ DO
 
     L1$ = LTRIM$(RTRIM$(L1$))
     L$ = UCASE$(L1$)
-    IF isNumber(LEFT$(L$, INSTR(L$, CHR$(32)) - 1)) THEN
+    redoWithoutLineNumber:
+    IF isNumber(LEFT$(L$, INSTR(L$, " ") - 1)) THEN
         IF NOT running THEN
             IF loaded THEN
                 i = VAL(LEFT$(L1$, INSTR(L1$, CHR$(32)) - 1))
@@ -156,6 +164,10 @@ DO
             ELSE
                 PRINT "No program loaded. Use NEW or LOAD <file>."
             END IF
+        ELSE
+            L$ = MID$(L$, INSTR(L$, " ") + 1)
+            L1$ = MID$(L1$, INSTR(L1$, " ") + 1)
+            GOTO redoWithoutLineNumber
         END IF
     ELSEIF LEFT$(L$, 5) = "LOAD " THEN
         IF NOT running THEN
@@ -228,7 +240,7 @@ DO
                     END IF
                 ELSE
                     'interval
-                    DIM lower AS _UNSIGNED LONG, upper AS _UNSIGNED LONG
+                    DIM lower AS LONG, upper AS LONG
                     DIM interval$
                     interval$ = MID$(L$, 8)
                     lower = VAL(LEFT$(interval$, INSTR(interval$, "-") - 1))
@@ -269,7 +281,8 @@ DO
         END IF
     ELSEIF LEFT$(L$, 5) = "SAVE " THEN
         IF NOT running THEN
-            saveFile$ = UCASE$(LTRIM$(RTRIM$(MID$(L$, 6))))
+            saveFile$ = Parse$(MID$(L$, 6))
+            db_echo "About to save '" + saveFile$ + "'"
             IF loaded THEN
                 IF saveFile$ <> loadedFile$ THEN
                     IF _FILEEXISTS(saveFile$) THEN
@@ -282,6 +295,7 @@ DO
                     END IF
                 ELSE
                     overWrite:
+                    db_echo "About to OPEN AS '" + LTRIM$(STR$(ff)) + "'"
                     ff = FREEFILE
                     OPEN saveFile$ FOR OUTPUT AS ff
                     FOR i = 1 TO UBOUND(program)
@@ -296,7 +310,7 @@ DO
             END IF
         END IF
     ELSEIF L$ = "CLEAR" THEN
-        DIM j AS _UNSIGNED LONG
+        DIM j AS LONG
         j = 0
         FOR i = totalVars TO 1 STEP -1
             IF NOT vars(i).protected THEN
@@ -403,7 +417,7 @@ DO
     ELSEIF L$ = "LIST" OR L$ = "LIST PAUSE" THEN
         IF NOT running THEN
             IF loaded THEN
-                DIM maxSpaceBefore AS INTEGER, prevFG AS _UNSIGNED LONG, prevBG AS _UNSIGNED LONG
+                DIM maxSpaceBefore AS INTEGER, prevFG AS LONG, prevBG AS LONG
                 DIM thisLineNum$, screenMaxCols AS INTEGER
 
                 prevFG = _DEFAULTCOLOR
@@ -656,29 +670,99 @@ DO
     ELSEIF L$ = "DO" THEN
         IF running THEN
             currentDoLevel = currentDoLevel + 1
-            doLine(currentDoLevel) = currentLine
+            loopControl(currentDoLevel).firstLine = currentLine
+            loopControl(currentDoLevel).condition = 0
+        ELSE
+            PRINT "Not valid in immediate mode."
+            GOTO Parse.Done
+        END IF
+    ELSEIF LEFT$(L$, 9) = "DO UNTIL " THEN
+        IF running THEN
+            currentDoLevel = currentDoLevel + 1
+            loopControl(currentDoLevel).firstLine = currentLine
+            loopControl(currentDoLevel).condition = 1
+            IF VAL(Parse$(MID$(L$, 10))) <> 0 THEN
+                GOTO treatAsExitDo
+            END IF
+        ELSE
+            PRINT "Not valid in immediate mode."
+            GOTO Parse.Done
+        END IF
+    ELSEIF LEFT$(L$, 9) = "DO WHILE " THEN
+        IF running THEN
+            currentDoLevel = currentDoLevel + 1
+            loopControl(currentDoLevel).firstLine = currentLine
+            loopControl(currentDoLevel).condition = 1
+            IF VAL(Parse$(MID$(L$, 10))) = 0 THEN
+                GOTO treatAsExitDo
+            END IF
+        ELSE
+            PRINT "Not valid in immediate mode."
+            GOTO Parse.Done
+        END IF
+    ELSEIF LEFT$(L$, 5) = "GOTO " THEN
+        IF running THEN
+            DIM theLabel$
+            theLabel$ = MID$(L$, 6)
+
+            IF isNumber(theLabel$) THEN theLabel$ = theLabel$ + " " ELSE theLabel$ = theLabel$ + ": "
+            'look for label
+            FOR i = 1 TO UBOUND(program)
+                temp$ = UCASE$(_TRIM$(program(i))) + " "
+                IF LEFT$(temp$, INSTR(temp$, " ")) = UCASE$(theLabel$) THEN
+                    currentLine = i - 1
+                    GOTO Parse.Done
+                END IF
+            NEXT
+            PRINT "Label not found on line"; currentLine: running = false: GOTO Parse.Done
         ELSE
             PRINT "Not valid in immediate mode."
             GOTO Parse.Done
         END IF
     ELSEIF L$ = "LOOP" THEN
-        treatAsLoop:
-        IF running AND currentDoLevel > 0 THEN
-            loopLine(currentDoLevel) = currentLine
-            IF doLine(currentDoLevel) > 0 THEN currentLine = doLine(currentDoLevel)
-        ELSEIF running AND currentDoLevel = 0 THEN
-            PRINT "LOOP without DO on line"; doLine(currentDoLevel) - 1: running = false: GOTO Parse.Done
-        ELSEIF NOT running THEN
+        IF running THEN
+            treatAsLoop:
+            IF currentDoLevel > 0 AND loopControl(currentDoLevel).firstLine > 0 THEN
+                currentLine = loopControl(currentDoLevel).firstLine - 1
+                currentDoLevel = currentDoLevel - 1
+            ELSE
+                IF currentDoLevel = 0 THEN
+                    'scan backwards until a DO is found
+                    FOR i = currentLine - 1 TO 1
+                        IF UCASE$(_TRIM$(program(i))) = "DO" OR LEFT$(UCASE$(_TRIM$(program(i))), 3) = "DO " THEN
+                            currentDoLevel = currentDoLevel + 1
+                            loopControl(currentDoLevel).firstLine = i
+                            loopControl(currentDoLevel).loopLine = currentLine
+                            GOTO treatAsLoop
+                        END IF
+                    NEXT
+                    IF i = 0 THEN PRINT "LOOP without DO on line"; currentLine: running = false: GOTO Parse.Done
+                END IF
+            END IF
+        ELSE
             PRINT "Not valid in immediate mode."
             GOTO Parse.Done
         END IF
     ELSEIF LEFT$(L$, 11) = "LOOP UNTIL " THEN
+        IF NOT running THEN
+            PRINT "Not valid in immediate mode."
+            GOTO Parse.Done
+        END IF
+        IF currentDoLevel = 0 THEN PRINT "LOOP without DO on line"; currentLine: running = false: GOTO Parse.Done
+        IF loopControl(currentDoLevel).condition = 1 THEN PRINT "LOOP UNTIL/WHILE not allowed in the same block as DO UNTIL/WHILE on line"; currentLine: running = false: GOTO Parse.Done
+        loopControl(currentDoLevel).condition = 2
         IF VAL(Parse$(MID$(L$, 12))) = 0 THEN
             GOTO treatAsLoop
         ELSE
             currentDoLevel = currentDoLevel - 1
         END IF
     ELSEIF LEFT$(L$, 11) = "LOOP WHILE " THEN
+        IF NOT running THEN
+            PRINT "Not valid in immediate mode."
+            GOTO Parse.Done
+        END IF
+        IF currentDoLevel = 0 THEN PRINT "LOOP without DO on line"; currentLine: running = false: GOTO Parse.Done
+        IF loopControl(currentDoLevel).condition = 1 THEN PRINT "LOOP UNTIL/WHILE not allowed in the same block as DO UNTIL/WHILE on line"; currentLine: running = false: GOTO Parse.Done
         IF VAL(Parse$(MID$(L$, 12))) <> 0 THEN
             GOTO treatAsLoop
         ELSE
@@ -690,13 +774,14 @@ DO
                 PRINT "EXIT DO without DO on line"; currentLine: running = false: GOTO Parse.Done
             END IF
 
-            IF loopLine(currentDoLevel) > 0 THEN
-                currentLine = loopLine(currentDoLevel)
+            treatAsExitDo:
+            IF loopControl(currentDoLevel).loopLine > 0 THEN
+                currentLine = loopControl(currentDoLevel).loopLine
                 currentDoLevel = currentDoLevel - 1
             ELSE
                 DO
                     currentLine = currentLine + 1
-                    IF currentLine > UBOUND(program) THEN PRINT "DO without LOOP on line"; doLine(currentDoLevel) - 1: running = false: GOTO Parse.Done
+                    IF currentLine > UBOUND(program) THEN PRINT "DO without LOOP on line"; loopControl(currentDoLevel).firstLine: running = false: GOTO Parse.Done
                     L1$ = program(currentLine)
                     L1$ = LTRIM$(RTRIM$(L1$))
                     L$ = UCASE$(L1$)
@@ -818,13 +903,19 @@ DO
             END IF
         END IF
     ELSE
-        syntaxerror:
-        IF LEN(L$) THEN PRINT "Syntax error";
-        IF running THEN
-            PRINT " on line"; currentLine
-            running = false
+        'label?
+        L$ = L$ + " "
+        IF LEN(L$) > 2 AND (RIGHT$(LEFT$(L$, INSTR(L$, " ") - 1), 1) = ":" OR isNumber(RTRIM$(L$))) THEN
+            'it's a label
         ELSE
-            PRINT
+            syntaxerror:
+            IF LEN(L$) THEN PRINT "Syntax error";
+            IF running THEN
+                PRINT " on line"; currentLine
+                running = false
+            ELSE
+                PRINT
+            END IF
         END IF
     END IF
 
@@ -838,7 +929,7 @@ LOOP
 'RESUME Parse.Done
 
 FUNCTION addVar~& (varName$)
-    DIM found AS _UNSIGNED LONG
+    DIM found AS LONG
 
     'check if var exists
     found = searchVar(varName$)
@@ -901,7 +992,7 @@ FUNCTION detectType%% (__varname$)
 END FUNCTION
 
 FUNCTION searchVar~& (__varName$)
-    DIM i AS _UNSIGNED LONG, found AS _BYTE
+    DIM i AS LONG, found AS _BYTE
     DIM varName$
 
     varName$ = __varName$
@@ -960,8 +1051,8 @@ FUNCTION removeQuote$ (__text$)
 END FUNCTION
 
 FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
-    DIM c$, sp AS _UNSIGNED LONG
-    DIM varIndex AS _UNSIGNED LONG
+    DIM c$, sp AS LONG
+    DIM varIndex AS LONG
     DIM temp##, temp$
 
     db_echo "entering getval(): " + __c$
@@ -1439,11 +1530,11 @@ FUNCTION Parse$ (__inputExpr AS STRING)
     'Adapted from https://www.codeproject.com/Articles/1205435/Parsing-Mathematical-Expressions-in-VB-NET-Missi
     ' Call this routine to perform the actual mathematic expression parsing
     ' Comments retained from the original code are marked with OC.
-    DIM t AS _UNSIGNED LONG, index AS _UNSIGNED LONG
-    DIM totalStrings AS _UNSIGNED LONG
+    DIM t AS LONG, index AS LONG
+    DIM totalStrings AS LONG
     DIM inputExpr AS STRING, temp$
     DIM returnAsText AS _BYTE, textReturn AS STRING
-    REDIM oe(0) AS _UNSIGNED LONG
+    REDIM oe(0) AS LONG
     REDIM strs(0) AS STRING
 
     db_echo "------------------ Parsing: " + __inputExpr
@@ -1457,7 +1548,7 @@ FUNCTION Parse$ (__inputExpr AS STRING)
         IF ASC(inputExpr, index + 1) = 40 OR index = 0 THEN
             DIM sb AS STRING
             sb = ""
-            DIM n AS _UNSIGNED LONG
+            DIM n AS LONG
             'OC: Perform a check if this is the first character in string
             IF index = 0 THEN
                 'OC: If so assign n variable to the value of variable index
@@ -1486,7 +1577,7 @@ FUNCTION Parse$ (__inputExpr AS STRING)
                     'OC: Increment the n loop counter variable by 1
                     n = n + 1
                 WEND
-                DIM r AS _UNSIGNED LONG
+                DIM r AS LONG
                 r = 0
                 'OC: Iterate through the array of positions
                 WHILE r <= UBOUND(oe) AND exists = false
@@ -1549,9 +1640,9 @@ FUNCTION Parse$ (__inputExpr AS STRING)
 END FUNCTION
 
 FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
-    DIM i AS _UNSIGNED LONG, j AS _UNSIGNED LONG
-    DIM l AS _UNSIGNED LONG, m AS _UNSIGNED LONG, lastIndex AS _UNSIGNED LONG
-    DIM totalElements AS _UNSIGNED LONG
+    DIM i AS LONG, j AS LONG
+    DIM l AS LONG, m AS LONG, lastIndex AS LONG
+    DIM totalElements AS LONG
     DIM ch AS STRING, hasOperator%%
     DIM quote AS _BYTE
     DIM tempElement AS STRING, op1##, op2##, result##
@@ -1591,7 +1682,7 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
     IF LEN(tempElement) THEN GOSUB addElement
 
     IF debugging THEN
-        DIM el$, tempElCount AS _UNSIGNED LONG
+        DIM el$, tempElCount AS LONG
         el$ = ""
         tempElCount = 0
         FOR l = 1 TO totalElements
@@ -1785,10 +1876,10 @@ FUNCTION Replace$ (TempText$, SubString$, NewString$, CaseSensitive AS _BYTE, To
 END FUNCTION
 
 FUNCTION isNumber%% (__a$)
-    DIM i AS _UNSIGNED LONG
+    DIM i AS LONG
     DIM a AS _UNSIGNED _BYTE
-    DIM D AS _UNSIGNED LONG, E AS _UNSIGNED LONG
-    DIM dp AS _UNSIGNED LONG
+    DIM D AS LONG, E AS LONG
+    DIM dp AS LONG
     DIM a$
 
     a$ = _TRIM$(__a$)
