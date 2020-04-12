@@ -54,7 +54,8 @@ REDIM SHARED nums(0) AS _FLOAT
 REDIM SHARED program(0) AS STRING
 DIM SHARED totalVars AS LONG, varType_DEFAULT AS _BYTE
 DIM SHARED thisScope$, currentLine AS LONG, lineThatErrored AS LONG
-DIM varIndex AS LONG, i AS LONG
+DIM varIndex AS LONG, i AS LONG, j AS LONG, quote AS LONG
+DIM continuation$, Ucontinuation$
 DIM loopControl(100) AS loopControlType
 DIM currentDoLevel AS INTEGER
 DIM ifLine AS LONG
@@ -151,7 +152,9 @@ DO
 
     L1$ = LTRIM$(RTRIM$(L1$))
     L$ = UCASE$(L1$)
-    redoWithoutLineNumber:
+
+    redoThisLine:
+
     IF isNumber(LEFT$(L$, INSTR(L$, " ") - 1)) THEN
         IF NOT running THEN
             IF loaded THEN
@@ -167,760 +170,789 @@ DO
         ELSE
             L$ = MID$(L$, INSTR(L$, " ") + 1)
             L1$ = MID$(L1$, INSTR(L1$, " ") + 1)
-            GOTO redoWithoutLineNumber
+            GOTO redoThisLine
         END IF
-    ELSEIF LEFT$(L$, 5) = "LOAD " THEN
-        IF NOT running THEN
-            temp$ = Parse$(MID$(L1$, 6))
-            tryWithExtension:
-            IF _FILEEXISTS(temp$) THEN
-                loaded = load(temp$)
-                IF loaded THEN PRINT "Loaded."
+    ELSE
+        'look for : separators
+        j = INSTR(L$, ":")
+        IF j > 0 THEN
+            keepLookingForSeparator:
+            quote = false
+            FOR i = 1 TO j
+                IF ASC(L$, i) = 34 THEN quote = NOT quote
+            NEXT
+
+            IF NOT quote THEN
+                continuation$ = _TRIM$(MID$(L1$, j + 1))
+                Ucontinuation$ = _TRIM$(MID$(L$, j + 1))
+                L1$ = _TRIM$(LEFT$(L1$, j - 1))
+                L$ = _TRIM$(LEFT$(L$, j - 1))
             ELSE
-                IF RIGHT$(temp$, 4) = ".bas" THEN
-                    PRINT "File not found - "; temp$
+                j = INSTR(j + 1, L$, ":")
+                IF j > 0 THEN
+                    GOTO keepLookingForSeparator
                 ELSE
-                    temp$ = temp$ + ".bas"
+                    continuation$ = ""
+                    Ucontinuation$ = ""
+                END IF
+            END IF
+        ELSE
+            continuation$ = ""
+            Ucontinuation$ = ""
+        END IF
+
+        IF LEFT$(L$, 5) = "LOAD " THEN
+            IF NOT running THEN
+                temp$ = Parse$(MID$(L1$, 6))
+                tryWithExtension:
+                IF _FILEEXISTS(temp$) THEN
+                    loaded = load(temp$)
+                    IF loaded THEN PRINT "Loaded."
+                ELSE
+                    IF RIGHT$(temp$, 4) = ".bas" THEN
+                        PRINT "File not found - "; temp$
+                    ELSE
+                        temp$ = temp$ + ".bas"
+                        GOTO tryWithExtension
+                    END IF
+                END IF
+            END IF
+        ELSEIF L$ = "RELOAD" THEN
+            IF NOT running THEN
+                IF loaded THEN
+                    L1$ = "LOAD " + loadedFile$
                     GOTO tryWithExtension
-                END IF
-            END IF
-        END IF
-    ELSEIF L$ = "RELOAD" THEN
-        IF NOT running THEN
-            IF loaded THEN
-                L1$ = "LOAD " + loadedFile$
-                GOTO tryWithExtension
-            ELSE
-                PRINT "No program loaded."
-            END IF
-        END IF
-    ELSEIF LEFT$(L$, 7) = "INSERT " AND VAL(MID$(L$, 8)) > 0 THEN
-        IF NOT running THEN
-            IF loaded THEN
-                IF VAL(MID$(L$, 8)) <= UBOUND(program) THEN
-                    REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
-                    FOR i = UBOUND(program) - 1 TO VAL(MID$(L$, 8)) STEP -1
-                        program(i + 1) = program(i)
-                    NEXT
-                    program(VAL(MID$(L$, 8))) = ""
-                    L$ = "EDIT " + MID$(L$, 8)
-                    GOTO Edit
                 ELSE
-                    PRINT "Invalid line number -"; VAL(MID$(L$, 8))
+                    PRINT "No program loaded."
                 END IF
-            ELSE
-                PRINT "No program loaded."
             END IF
-        END IF
-    ELSEIF LEFT$(L$, 6) = "CHDIR " THEN
-        CHDIR Parse$(MID$(L1$, 7))
-    ELSEIF LEFT$(L$, 6) = "MKDIR " THEN
-        MKDIR Parse$(MID$(L1$, 7))
-    ELSEIF LEFT$(L$, 5) = "KILL " THEN
-        KILL Parse$(MID$(L1$, 6))
-    ELSEIF L$ = "DEBUG ON" THEN
-        _CONSOLE ON
-        debugging = true
-        PRINT "Debugging enabled."
-    ELSEIF L$ = "DEBUG OFF" THEN
-        _CONSOLE OFF
-        debugging = false
-        PRINT "Debugging disabled."
-    ELSEIF LEFT$(L$, 7) = "DELETE " AND VAL(MID$(L$, 8)) > 0 THEN
-        IF NOT running THEN
-            IF loaded THEN
-                IF INSTR(MID$(L$, 8), "-") = 0 THEN
+        ELSEIF LEFT$(L$, 7) = "INSERT " AND VAL(MID$(L$, 8)) > 0 THEN
+            IF NOT running THEN
+                IF loaded THEN
                     IF VAL(MID$(L$, 8)) <= UBOUND(program) THEN
-                        FOR i = VAL(MID$(L$, 8)) + 1 TO UBOUND(program)
-                            program(i - 1) = program(i)
+                        REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
+                        FOR i = UBOUND(program) - 1 TO VAL(MID$(L$, 8)) STEP -1
+                            program(i + 1) = program(i)
                         NEXT
-                        REDIM _PRESERVE program(UBOUND(program) - 1) AS STRING
+                        program(VAL(MID$(L$, 8))) = ""
+                        L$ = "EDIT " + MID$(L$, 8)
+                        GOTO Edit
                     ELSE
                         PRINT "Invalid line number -"; VAL(MID$(L$, 8))
                     END IF
                 ELSE
-                    'interval
-                    DIM lower AS LONG, upper AS LONG
-                    DIM interval$
-                    interval$ = MID$(L$, 8)
-                    lower = VAL(LEFT$(interval$, INSTR(interval$, "-") - 1))
-                    upper = VAL(MID$(interval$, INSTR(interval$, "-") + 1))
-                    IF lower > upper THEN SWAP lower, upper
-
-                    IF lower < 1 OR upper > UBOUND(program) THEN
-                        PRINT "Invalid interval ("; LTRIM$(RTRIM$(interval$)); ")"
+                    PRINT "No program loaded."
+                END IF
+            END IF
+        ELSEIF LEFT$(L$, 6) = "CHDIR " THEN
+            CHDIR Parse$(MID$(L1$, 7))
+        ELSEIF LEFT$(L$, 6) = "MKDIR " THEN
+            MKDIR Parse$(MID$(L1$, 7))
+        ELSEIF LEFT$(L$, 5) = "KILL " THEN
+            KILL Parse$(MID$(L1$, 6))
+        ELSEIF L$ = "DEBUG ON" THEN
+            _CONSOLE ON
+            debugging = true
+            PRINT "Debugging enabled."
+        ELSEIF L$ = "DEBUG OFF" THEN
+            _CONSOLE OFF
+            debugging = false
+            PRINT "Debugging disabled."
+        ELSEIF LEFT$(L$, 7) = "DELETE " AND VAL(MID$(L$, 8)) > 0 THEN
+            IF NOT running THEN
+                IF loaded THEN
+                    IF INSTR(MID$(L$, 8), "-") = 0 THEN
+                        IF VAL(MID$(L$, 8)) <= UBOUND(program) THEN
+                            FOR i = VAL(MID$(L$, 8)) + 1 TO UBOUND(program)
+                                program(i - 1) = program(i)
+                            NEXT
+                            REDIM _PRESERVE program(UBOUND(program) - 1) AS STRING
+                        ELSE
+                            PRINT "Invalid line number -"; VAL(MID$(L$, 8))
+                        END IF
                     ELSE
-                        FOR i = upper + 1 TO UBOUND(program)
-                            program(lower + (i - (upper + 1))) = program(i)
-                        NEXT
-                        REDIM _PRESERVE program(UBOUND(program) - (upper - lower) - 1) AS STRING
+                        'interval
+                        DIM lower AS LONG, upper AS LONG
+                        DIM interval$
+                        interval$ = MID$(L$, 8)
+                        lower = VAL(LEFT$(interval$, INSTR(interval$, "-") - 1))
+                        upper = VAL(MID$(interval$, INSTR(interval$, "-") + 1))
+                        IF lower > upper THEN SWAP lower, upper
+
+                        IF lower < 1 OR upper > UBOUND(program) THEN
+                            PRINT "Invalid interval ("; LTRIM$(RTRIM$(interval$)); ")"
+                        ELSE
+                            FOR i = upper + 1 TO UBOUND(program)
+                                program(lower + (i - (upper + 1))) = program(i)
+                            NEXT
+                            REDIM _PRESERVE program(UBOUND(program) - (upper - lower) - 1) AS STRING
+                        END IF
                     END IF
-                END IF
-            ELSE
-                PRINT "No program loaded."
-            END IF
-        END IF
-    ELSEIF L$ = "SAVE" THEN
-        IF NOT running THEN
-            IF loaded THEN
-                IF loadedFile$ = "" THEN
-                    PRINT "Missing: file name."
                 ELSE
-                    DIM ff AS INTEGER
-                    ff = FREEFILE
-                    OPEN loadedFile$ FOR OUTPUT AS ff
-                    FOR i = 1 TO UBOUND(program)
-                        PRINT #ff, program(i)
-                    NEXT
-                    CLOSE ff
-                    PRINT "Saved - "; loadedFile$
+                    PRINT "No program loaded."
                 END IF
-            ELSE
-                PRINT "No program loaded."
             END IF
-        END IF
-    ELSEIF LEFT$(L$, 5) = "SAVE " THEN
-        IF NOT running THEN
-            saveFile$ = Parse$(MID$(L$, 6))
-            db_echo "About to save '" + saveFile$ + "'"
-            IF loaded THEN
-                IF saveFile$ <> loadedFile$ THEN
-                    IF _FILEEXISTS(saveFile$) THEN
-                        INPUT "Overwrite (y/N)?", q$1
-                        IF LCASE$(q$1) = "y" THEN
+        ELSEIF L$ = "SAVE" THEN
+            IF NOT running THEN
+                IF loaded THEN
+                    IF loadedFile$ = "" THEN
+                        PRINT "Missing: file name."
+                    ELSE
+                        DIM ff AS INTEGER
+                        ff = FREEFILE
+                        OPEN loadedFile$ FOR OUTPUT AS ff
+                        FOR i = 1 TO UBOUND(program)
+                            PRINT #ff, program(i)
+                        NEXT
+                        CLOSE ff
+                        PRINT "Saved - "; loadedFile$
+                    END IF
+                ELSE
+                    PRINT "No program loaded."
+                END IF
+            END IF
+        ELSEIF LEFT$(L$, 5) = "SAVE " THEN
+            IF NOT running THEN
+                saveFile$ = Parse$(MID$(L$, 6))
+                db_echo "About to save '" + saveFile$ + "'"
+                IF loaded THEN
+                    IF saveFile$ <> loadedFile$ THEN
+                        IF _FILEEXISTS(saveFile$) THEN
+                            INPUT "Overwrite (y/N)?", q$1
+                            IF LCASE$(q$1) = "y" THEN
+                                GOTO overWrite
+                            END IF
+                        ELSE
                             GOTO overWrite
                         END IF
                     ELSE
-                        GOTO overWrite
+                        overWrite:
+                        db_echo "About to OPEN AS '" + LTRIM$(STR$(ff)) + "'"
+                        ff = FREEFILE
+                        OPEN saveFile$ FOR OUTPUT AS ff
+                        FOR i = 1 TO UBOUND(program)
+                            PRINT #ff, program(i)
+                        NEXT
+                        CLOSE ff
+                        loadedFile$ = saveFile$
+                        PRINT "Saved - "; loadedFile$
                     END IF
                 ELSE
-                    overWrite:
-                    db_echo "About to OPEN AS '" + LTRIM$(STR$(ff)) + "'"
-                    ff = FREEFILE
-                    OPEN saveFile$ FOR OUTPUT AS ff
-                    FOR i = 1 TO UBOUND(program)
-                        PRINT #ff, program(i)
-                    NEXT
-                    CLOSE ff
-                    loadedFile$ = saveFile$
-                    PRINT "Saved - "; loadedFile$
+                    PRINT "No program loaded."
                 END IF
-            ELSE
-                PRINT "No program loaded."
             END IF
-        END IF
-    ELSEIF L$ = "CLEAR" THEN
-        DIM j AS LONG
-        j = 0
-        FOR i = totalVars TO 1 STEP -1
-            IF NOT vars(i).protected THEN
-                totalVars = totalVars - 1
-                vars(i).name = ""
-                vars(i).type = 0
-                strings(i) = ""
-                nums(i) = 0
-            END IF
-        NEXT
-    ELSEIF L$ = "NEW" OR LEFT$(L$, 4) = "NEW " THEN
-        IF NOT running THEN
-            IF LEN(L$) > 3 THEN loadedFile$ = MID$(L$, 5) ELSE loadedFile$ = ""
-            loaded = true
-            REDIM SHARED program(1) AS STRING
-        END IF
-    ELSEIF L$ = "_DISPLAY" THEN
-        _DISPLAY
-    ELSEIF LEFT$(L$, 5) = "EDIT " AND VAL(MID$(L$, 6)) > 0 THEN
-        IF NOT running THEN
-            Edit:
-            IF loaded THEN
-                IF VAL(MID$(L$, 6)) = UBOUND(program) + 1 THEN
-                    REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
-                    'EDIT can be used to increase program size without the need for INSERT
-                END IF
-
-                IF VAL(MID$(L$, 6)) <= UBOUND(program) THEN
-                    DIM row AS INTEGER, col AS INTEGER
-                    row = CSRLIN: col = POS(1)
-                    PRINT LEFT$(program(VAL(MID$(L$, 6))), 80);
-                    DO
-                        LOCATE row, col, 1
-                        k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
-                        SELECT CASE k$
-                            CASE CHR$(13)
-                                DIM p$
-                                p$ = ""
-                                FOR i = 1 TO 80
-                                    p$ = p$ + CHR$(SCREEN(row, i))
-                                NEXT
-                                program(VAL(MID$(L$, 6))) = RTRIM$(p$)
-                                EXIT DO
-                            CASE CHR$(27)
-                                EXIT DO
-                            CASE CHR$(8)
-                                IF col > 1 THEN
-                                    FOR i = col TO 80
-                                        LOCATE row, i - 1
-                                        PRINT CHR$(SCREEN(row, i));
-                                    NEXT
-                                    col = col - 1
-                                END IF
-                            CASE CHR$(0) + CHR$(83)
-                                FOR i = col TO 79
-                                    LOCATE row, i
-                                    PRINT CHR$(SCREEN(row, i + 1));
-                                NEXT
-                            CASE CHR$(0) + CHR$(75)
-                                IF col > 1 THEN col = col - 1
-                            CASE CHR$(0) + CHR$(77)
-                                IF col < 80 THEN col = col + 1
-                            CASE ELSE
-                                PRINT k$;
-                                IF col < 80 THEN col = col + 1
-                        END SELECT
-                    LOOP
-                    PRINT
-                    LOCATE , , 0
-                ELSE
-                    PRINT "Invalid line number -"; VAL(MID$(L$, 6))
-                END IF
-            ELSE
-                PRINT "No program loaded."
-            END IF
-        END IF
-    ELSEIF L$ = "LIST VARIABLES" THEN
-        IF NOT running THEN
+        ELSEIF L$ = "CLEAR" THEN
             j = 0
-            db_echo "Listing variables"
-            db_echo "Total vars:" + STR$(totalVars)
-            FOR i = 1 TO totalVars
+            FOR i = totalVars TO 1 STEP -1
                 IF NOT vars(i).protected THEN
-                    j = j + 1
-                    PRINT RTRIM$(vars(i).name); " = ";
-                    IF vars(i).type = varTypeSTRING THEN
-                        PRINT CHR$(34); strings(i); CHR$(34)
-                    ELSE
-                        PRINT nums(i)
-                    END IF
-
-                    IF j MOD 20 = 0 AND i < totalVars THEN
-                        PRINT "-- hit a key --"
-                        k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
-                        IF k$ = CHR$(3) THEN
-                            PRINT "Break."
-                            GOTO ListEnd
-                        END IF
-                        _KEYCLEAR
-                    END IF
+                    totalVars = totalVars - 1
+                    vars(i).name = ""
+                    vars(i).type = 0
+                    strings(i) = ""
+                    nums(i) = 0
                 END IF
             NEXT
-        END IF
-    ELSEIF L$ = "LIST" OR L$ = "LIST PAUSE" THEN
-        IF NOT running THEN
-            IF loaded THEN
-                DIM maxSpaceBefore AS INTEGER, prevFG AS LONG, prevBG AS LONG
-                DIM thisLineNum$, screenMaxCols AS INTEGER
-
-                prevFG = _DEFAULTCOLOR
-                prevBG = _BACKGROUNDCOLOR
-
-                IF _PIXELSIZE(_DEST) = 0 THEN
-                    screenMaxCols = _WIDTH
-                ELSE
-                    screenMaxCols = _WIDTH / _PRINTWIDTH("W")
-                END IF
-
-                maxSpaceBefore = LEN(STR$(UBOUND(program))) + 1
-
-                MyBad = true
-                COLOR , 0
-                MyBad = false
-
-                FOR i = 1 TO UBOUND(program)
-                    thisLineNum$ = STR$(i)
-                    thisLineNum$ = SPACE$(maxSpaceBefore - LEN(thisLineNum$) - 1) + thisLineNum$ + " "
-                    MyBad = true
-                    COLOR 8
-                    MyBad = false
-                    PRINT thisLineNum$;
-
-                    MyBad = true
-                    COLOR 7
-                    MyBad = false
-                    PRINT program(i);
-
-                    IF POS(1) < screenMaxCols THEN
-                        PRINT SPACE$((screenMaxCols + 1) - POS(1));
+        ELSEIF L$ = "NEW" OR LEFT$(L$, 4) = "NEW " THEN
+            IF NOT running THEN
+                IF LEN(L$) > 3 THEN loadedFile$ = MID$(L$, 5) ELSE loadedFile$ = ""
+                loaded = true
+                REDIM SHARED program(1) AS STRING
+            END IF
+        ELSEIF L$ = "_DISPLAY" THEN
+            _DISPLAY
+        ELSEIF LEFT$(L$, 5) = "EDIT " AND VAL(MID$(L$, 6)) > 0 THEN
+            IF NOT running THEN
+                Edit:
+                IF loaded THEN
+                    IF VAL(MID$(L$, 6)) = UBOUND(program) + 1 THEN
+                        REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
+                        'EDIT can be used to increase program size without the need for INSERT
                     END IF
 
-                    IF i MOD 20 = 0 AND L$ = "LIST PAUSE" THEN
+                    IF VAL(MID$(L$, 6)) <= UBOUND(program) THEN
+                        DIM row AS INTEGER, col AS INTEGER
+                        row = CSRLIN: col = POS(1)
+                        PRINT LEFT$(program(VAL(MID$(L$, 6))), 80);
+                        DO
+                            LOCATE row, col, 1
+                            k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
+                            SELECT CASE k$
+                                CASE CHR$(13)
+                                    DIM p$
+                                    p$ = ""
+                                    FOR i = 1 TO 80
+                                        p$ = p$ + CHR$(SCREEN(row, i))
+                                    NEXT
+                                    program(VAL(MID$(L$, 6))) = RTRIM$(p$)
+                                    EXIT DO
+                                CASE CHR$(27)
+                                    EXIT DO
+                                CASE CHR$(8)
+                                    IF col > 1 THEN
+                                        FOR i = col TO 80
+                                            LOCATE row, i - 1
+                                            PRINT CHR$(SCREEN(row, i));
+                                        NEXT
+                                        col = col - 1
+                                    END IF
+                                CASE CHR$(0) + CHR$(83)
+                                    FOR i = col TO 79
+                                        LOCATE row, i
+                                        PRINT CHR$(SCREEN(row, i + 1));
+                                    NEXT
+                                CASE CHR$(0) + CHR$(75)
+                                    IF col > 1 THEN col = col - 1
+                                CASE CHR$(0) + CHR$(77)
+                                    IF col < 80 THEN col = col + 1
+                                CASE ELSE
+                                    PRINT k$;
+                                    IF col < 80 THEN col = col + 1
+                            END SELECT
+                        LOOP
+                        PRINT
+                        LOCATE , , 0
+                    ELSE
+                        PRINT "Invalid line number -"; VAL(MID$(L$, 6))
+                    END IF
+                ELSE
+                    PRINT "No program loaded."
+                END IF
+            END IF
+        ELSEIF L$ = "LIST VARIABLES" THEN
+            IF NOT running THEN
+                j = 0
+                db_echo "Listing variables"
+                db_echo "Total vars:" + STR$(totalVars)
+                FOR i = 1 TO totalVars
+                    IF NOT vars(i).protected THEN
+                        j = j + 1
+                        PRINT RTRIM$(vars(i).name); " = ";
+                        IF vars(i).type = varTypeSTRING THEN
+                            PRINT CHR$(34); strings(i); CHR$(34)
+                        ELSE
+                            PRINT nums(i)
+                        END IF
+
+                        IF j MOD 20 = 0 AND i < totalVars THEN
+                            PRINT "-- hit a key --"
+                            k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
+                            IF k$ = CHR$(3) THEN
+                                PRINT "Break."
+                                GOTO ListEnd
+                            END IF
+                            _KEYCLEAR
+                        END IF
+                    END IF
+                NEXT
+            END IF
+        ELSEIF L$ = "LIST" OR L$ = "LIST PAUSE" THEN
+            IF NOT running THEN
+                IF loaded THEN
+                    DIM maxSpaceBefore AS INTEGER, prevFG AS LONG, prevBG AS LONG
+                    DIM thisLineNum$, screenMaxCols AS INTEGER
+
+                    prevFG = _DEFAULTCOLOR
+                    prevBG = _BACKGROUNDCOLOR
+
+                    IF _PIXELSIZE(_DEST) = 0 THEN
+                        screenMaxCols = _WIDTH
+                    ELSE
+                        screenMaxCols = _WIDTH / _PRINTWIDTH("W")
+                    END IF
+
+                    maxSpaceBefore = LEN(STR$(UBOUND(program))) + 1
+
+                    MyBad = true
+                    COLOR , 0
+                    MyBad = false
+
+                    FOR i = 1 TO UBOUND(program)
+                        thisLineNum$ = STR$(i)
+                        thisLineNum$ = SPACE$(maxSpaceBefore - LEN(thisLineNum$) - 1) + thisLineNum$ + " "
                         MyBad = true
                         COLOR 8
                         MyBad = false
+                        PRINT thisLineNum$;
 
-                        PRINT "-- hit a key --"
-                        k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
-                        IF k$ = CHR$(3) THEN
-                            COLOR prevFG, prevBG
-                            PRINT "Break."
-                            GOTO ListEnd
+                        MyBad = true
+                        COLOR 7
+                        MyBad = false
+                        PRINT program(i);
+
+                        IF POS(1) < screenMaxCols THEN
+                            PRINT SPACE$((screenMaxCols + 1) - POS(1));
                         END IF
-                        _KEYCLEAR
-                    END IF
-                NEXT
-                COLOR prevFG, prevBG
-                PRINT "End of file - "; loadedFile$
-                ListEnd:
-            ELSE
-                PRINT "No program loaded."
-            END IF
-        END IF
-    ELSEIF LEFT$(L$, 5) = "LIST " AND VAL(MID$(L$, 6)) > 0 THEN
-        IF NOT running THEN
-            IF loaded THEN
-                IF VAL(MID$(L$, 6)) <= UBOUND(program) THEN
-                    PRINT program(VAL(MID$(L$, 6)))
-                ELSE
-                    PRINT "Invalid line number -"; VAL(MID$(L$, 6))
-                END IF
-            ELSE
-                PRINT "No program loaded."
-            END IF
-        END IF
-    ELSEIF LEFT$(L$, 6) = "WIDTH " THEN
-        DIM p1$, p2$
-        p$ = MID$(L$, 7)
-        IF INSTR(p$, ",") THEN
-            p1$ = LEFT$(p$, INSTR(p$, ",") - 1)
-            p2$ = MID$(p$, INSTR(p$, ",") + 1)
-            IF LEN(p1$) = 0 THEN
-                WIDTH , VAL(Parse$(p2$))
-            ELSE
-                WIDTH VAL(Parse$(p1$)), VAL(Parse$(p2$))
-            END IF
-        ELSE
-            WIDTH VAL(Parse$(p$))
-        END IF
-    ELSEIF LEFT$(L$, 10) = "RANDOMIZE " THEN
-        RANDOMIZE VAL(Parse$(MID$(L$, 11)))
-    ELSEIF LEFT$(L$, 7) = "_LIMIT " THEN
-        externalLimit = VAL(Parse$(MID$(L$, 8)))
-    ELSEIF LEFT$(L$, 1) = "'" OR LEFT$(L$, 4) = "REM " OR L$ = "'" OR L$ = "REM" OR L$ = "" THEN
-        'it's a comment.
-    ELSEIF LEFT$(L$, 4) = "KEY " THEN
-        IF _TRIM$(MID$(L$, 5)) = "ON" THEN
-            KEY ON
-        ELSEIF _TRIM$(MID$(L$, 5)) = "OFF" THEN
-            KEY OFF
-        ELSE
-            GOTO syntaxerror
-        END IF
-    ELSEIF L$ = "RUN" THEN
-        IF NOT running THEN
-            IF loaded THEN
-                currentLine = 0
-                currentDoLevel = 0
-                ifLine = 0
-                externalLimit = 0
-                running = true
-            ELSE
-                PRINT "No program loaded."
-            END IF
-        END IF
-    ELSEIF LEFT$(L$, 6) = "COLOR " THEN
-        DIM c$, c1$, c2$
-        c$ = MID$(L$, 7)
-        IF INSTR(c$, ",") THEN
-            c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
-            c2$ = MID$(c$, INSTR(c$, ",") + 1)
-            IF LEN(c1$) > 0 AND LEN(c2$) > 0 THEN
-                COLOR VAL(Parse(c1$)), VAL(Parse(c2$))
-            ELSEIF LEN(c1$) > 0 AND LEN(c2$) = 0 THEN
-                COLOR VAL(Parse(c1$))
-            ELSEIF LEN(c1$) = 0 AND LEN(c2$) > 0 THEN
-                COLOR , VAL(Parse(c2$))
-            END IF
-        ELSE
-            COLOR VAL(Parse(c$))
-        END IF
-    ELSEIF LEFT$(L$, 7) = "_BLINK " THEN
-        IF _TRIM$(MID$(L$, 8)) = "ON" THEN
-            _BLINK ON
-        ELSEIF _TRIM$(MID$(L$, 8)) = "OFF" THEN
-            _BLINK OFF
-        ELSE
-            GOTO syntaxerror
-        END IF
-    ELSEIF LEFT$(L$, 7) = "LOCATE " THEN
-        c$ = MID$(L$, 8)
-        IF INSTR(c$, ",") THEN
-            c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
-            c2$ = MID$(c$, INSTR(c$, ",") + 1)
-            IF LEN(c1$) > 0 AND LEN(c2$) > 0 THEN
-                LOCATE VAL(Parse$(c1$)), VAL(Parse$(c2$))
-            ELSEIF LEN(c1$) > 0 AND LEN(c2$) = 0 THEN
-                LOCATE VAL(Parse$(c1$))
-            ELSEIF LEN(c1$) = 0 AND LEN(c2$) > 0 THEN
-                LOCATE , VAL(Parse$(c2$))
-            END IF
-        ELSE
-            LOCATE VAL(Parse$(c$))
-        END IF
-    ELSEIF LEFT$(L$, 6) = "FILES " THEN
-        temp$ = Parse$(MID$(L1$, 7))
-        FILES temp$
-    ELSEIF L$ = "FILES" THEN
-        FILES
-    ELSEIF LEFT$(L$, 9) = "_SNDPLAY " THEN
-        _SNDPLAY VAL(Parse$(MID$(L$, 10)))
-    ELSEIF LEFT$(L$, 8) = "CIRCLE (" THEN
-        IF _PIXELSIZE(_DEST) = 0 THEN throwError 5: GOTO Parse.Done
-        Comma1% = INSTR(L$, ","): Comma2% = INSTR(Comma1% + 1, L$, ","): Comma3% = INSTR(Comma2% + 1, L$, ",")
 
-        DIM XPos1%, YPos1%, X1%, Y1%, Rad%, DrawClr%, EPos%, Elipse!, Arc%
-        DIM Comma4%, Comma5%, ArcBeg!, ArcEnd!, d##
-        XPos1% = INSTR(L$, " (") + 2
-        YPos1% = Comma1% + 1
-        X1% = VAL(Parse(MID$(L$, XPos1%, Comma1% - XPos1%)))
-        Y1% = VAL(Parse(MID$(L$, YPos1%, Comma2% - YPos1% - 1)))
+                        IF i MOD 20 = 0 AND L$ = "LIST PAUSE" THEN
+                            MyBad = true
+                            COLOR 8
+                            MyBad = false
 
-        Rad% = VAL(Parse(MID$(L$, Comma2% + 1, Comma3% - Comma2% - 1)))
-
-        c$ = LTRIM$(RTRIM$(LEFT$(MID$(L$, Comma3% + 1), 3))) 'Color attribute (variable or constant)
-        IF RIGHT$(c$, 1) = "," THEN c$ = LEFT$(c$, LEN(c$) - 1) 'If single-digit attribute
-
-        IF INSTR("0123456789", LEFT$(c$, 1)) > 0 THEN DrawClr% = VAL(c$) ELSE DrawClr% = VAL(Parse(c$))
-
-        EPos% = INSTR(L$, ", , , ")
-
-        IF EPos% > 0 THEN
-            EPos% = EPos% + 6: Elipse = VAL(Parse$(MID$(L$, EPos%)))
-        ELSE
-            Arc% = INSTR(Comma3% + 1, L$, ",")
-
-            IF Arc% > 0 THEN
-                Comma4% = Arc%
-                Comma5% = INSTR(Comma4% + 1, L$, ",")
-
-                ArcBeg = VAL(Parse$(MID$(L$, Comma4% + 1, Comma5% - Comma4% - 1))) ': PRINT "ArcBeg:"; ArcBeg;   '* * * * Test PRINT
-                ArcEnd = VAL(Parse$(MID$(L$, Comma5% + 1))) ': PRINT " ArcEnd:"; ArcEnd;
-
-                IF INSTR(Comma5% + 1, L$, ",") > 0 THEN EPos% = INSTR(Comma5% + 1, L$, ",") + 1: Elipse = VAL(Parse$(MID$(L$, EPos%)))
-            END IF
-        END IF
-
-        IF Arc% > 0 AND Elipse = 0 THEN CIRCLE (X1%, Y1%), Rad%, DrawClr%, ArcBeg, ArcEnd: GOTO Circ.Done
-        IF Elipse > 0 AND Arc% = 0 THEN CIRCLE (X1%, Y1%), Rad%, DrawClr%, , , Elipse: GOTO Circ.Done
-        IF Arc% > 0 AND Elipse > 0 THEN CIRCLE (X1%, Y1%), Rad%, DrawClr%, ArcBeg, ArcEnd, Elipse: GOTO Circ.Done
-        CIRCLE (X1%, Y1%), Rad%, DrawClr% 'No arc, no elipse
-
-        Circ.Done: Rad% = 0: Arc% = 0: Elipse = 0: c$ = "": DrawClr% = 0: GOTO Parse.Done
-    ELSEIF L$ = "SLEEP" THEN
-        SLEEP
-    ELSEIF LEFT$(L$, 6) = "SLEEP " THEN
-        SLEEP VAL(Parse$(MID$(L$, 7)))
-    ELSEIF L$ = "PRINT" OR L$ = "?" THEN
-        PRINT
-    ELSEIF LEFT$(L$, 6) = "PRINT " OR LEFT$(L$, 1) = "?" THEN
-        IF LEFT$(L$, 2) = "? " THEN L1$ = "PRINT " + MID$(L1$, 3): L$ = L1$
-        IF LEFT$(L$, 1) = "?" THEN L1$ = "PRINT " + MID$(L1$, 2): L$ = L1$
-
-        DIM retainCursor AS _BYTE
-        IF RIGHT$(L$, 1) = ";" THEN
-            retainCursor = true
-            L$ = LEFT$(L$, LEN(L$) - 1)
-            L1$ = LEFT$(L1$, LEN(L$))
-        ELSE
-            retainCursor = false
-        END IF
-
-        PRINT Parse(MID$(L1$, 7));
-        IF NOT retainCursor THEN PRINT
-    ELSEIF LEFT$(L$, 7) = "_TITLE " THEN
-        temp$ = Parse$(MID$(L1$, 8))
-        _TITLE temp$
-    ELSEIF L$ = "CLS" THEN
-        CLS
-        IF debugging THEN
-            i = _DEST
-            _DEST _CONSOLE
-            CLS
-            _DEST i
-        END IF
-    ELSEIF L$ = "SYSTEM" OR L$ = "EXIT" THEN
-        SYSTEM
-    ELSEIF L$ = "END" THEN
-        IF running THEN running = false
-    ELSEIF LEFT$(L$, 6) = "INPUT " THEN
-        DIM varName$, d$, d%
-        varName$ = MID$(L1$, 7)
-        varIndex = addVar(varName$)
-        IF vars(varIndex).type = varTypeSTRING THEN
-            INPUT "", d$
-            strings(varIndex) = d$
-        ELSE
-            SELECT CASE vars(varIndex).type
-                CASE varTypeINTEGER
-                    INPUT "", d%
-                    nums(varIndex) = d%
-                CASE ELSE
-                    INPUT "", d##
-                    nums(varIndex) = d##
-            END SELECT
-        END IF
-    ELSEIF L$ = "DO" THEN
-        IF running THEN
-            currentDoLevel = currentDoLevel + 1
-            loopControl(currentDoLevel).firstLine = currentLine
-            loopControl(currentDoLevel).condition = 0
-        ELSE
-            PRINT "Not valid in immediate mode."
-            GOTO Parse.Done
-        END IF
-    ELSEIF LEFT$(L$, 9) = "DO UNTIL " THEN
-        IF running THEN
-            currentDoLevel = currentDoLevel + 1
-            loopControl(currentDoLevel).firstLine = currentLine
-            loopControl(currentDoLevel).condition = 1
-            IF VAL(Parse$(MID$(L$, 10))) <> 0 THEN
-                GOTO treatAsExitDo
-            END IF
-        ELSE
-            PRINT "Not valid in immediate mode."
-            GOTO Parse.Done
-        END IF
-    ELSEIF LEFT$(L$, 9) = "DO WHILE " THEN
-        IF running THEN
-            currentDoLevel = currentDoLevel + 1
-            loopControl(currentDoLevel).firstLine = currentLine
-            loopControl(currentDoLevel).condition = 1
-            IF VAL(Parse$(MID$(L$, 10))) = 0 THEN
-                GOTO treatAsExitDo
-            END IF
-        ELSE
-            PRINT "Not valid in immediate mode."
-            GOTO Parse.Done
-        END IF
-    ELSEIF LEFT$(L$, 5) = "GOTO " THEN
-        IF running THEN
-            DIM theLabel$
-            theLabel$ = MID$(L$, 6)
-
-            IF isNumber(theLabel$) THEN theLabel$ = theLabel$ + " " ELSE theLabel$ = theLabel$ + ": "
-            'look for label
-            FOR i = 1 TO UBOUND(program)
-                temp$ = UCASE$(_TRIM$(program(i))) + " "
-                IF LEFT$(temp$, INSTR(temp$, " ")) = UCASE$(theLabel$) THEN
-                    currentLine = i - 1
-                    GOTO Parse.Done
-                END IF
-            NEXT
-            PRINT "Label not found on line"; currentLine: running = false: GOTO Parse.Done
-        ELSE
-            PRINT "Not valid in immediate mode."
-            GOTO Parse.Done
-        END IF
-    ELSEIF L$ = "LOOP" THEN
-        IF running THEN
-            treatAsLoop:
-            IF currentDoLevel > 0 AND loopControl(currentDoLevel).firstLine > 0 THEN
-                currentLine = loopControl(currentDoLevel).firstLine - 1
-                currentDoLevel = currentDoLevel - 1
-            ELSE
-                IF currentDoLevel = 0 THEN
-                    'scan backwards until a DO is found
-                    FOR i = currentLine - 1 TO 1
-                        IF UCASE$(_TRIM$(program(i))) = "DO" OR LEFT$(UCASE$(_TRIM$(program(i))), 3) = "DO " THEN
-                            currentDoLevel = currentDoLevel + 1
-                            loopControl(currentDoLevel).firstLine = i
-                            loopControl(currentDoLevel).loopLine = currentLine
-                            GOTO treatAsLoop
+                            PRINT "-- hit a key --"
+                            k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
+                            IF k$ = CHR$(3) THEN
+                                COLOR prevFG, prevBG
+                                PRINT "Break."
+                                GOTO ListEnd
+                            END IF
+                            _KEYCLEAR
                         END IF
                     NEXT
-                    IF i = 0 THEN PRINT "LOOP without DO on line"; currentLine: running = false: GOTO Parse.Done
+                    COLOR prevFG, prevBG
+                    PRINT "End of file - "; loadedFile$
+                    ListEnd:
+                ELSE
+                    PRINT "No program loaded."
+                END IF
+            END IF
+        ELSEIF LEFT$(L$, 5) = "LIST " AND VAL(MID$(L$, 6)) > 0 THEN
+            IF NOT running THEN
+                IF loaded THEN
+                    IF VAL(MID$(L$, 6)) <= UBOUND(program) THEN
+                        PRINT program(VAL(MID$(L$, 6)))
+                    ELSE
+                        PRINT "Invalid line number -"; VAL(MID$(L$, 6))
+                    END IF
+                ELSE
+                    PRINT "No program loaded."
+                END IF
+            END IF
+        ELSEIF LEFT$(L$, 6) = "WIDTH " THEN
+            DIM p1$, p2$
+            p$ = MID$(L$, 7)
+            IF INSTR(p$, ",") THEN
+                p1$ = LEFT$(p$, INSTR(p$, ",") - 1)
+                p2$ = MID$(p$, INSTR(p$, ",") + 1)
+                IF LEN(p1$) = 0 THEN
+                    WIDTH , VAL(Parse$(p2$))
+                ELSE
+                    WIDTH VAL(Parse$(p1$)), VAL(Parse$(p2$))
+                END IF
+            ELSE
+                WIDTH VAL(Parse$(p$))
+            END IF
+        ELSEIF LEFT$(L$, 10) = "RANDOMIZE " THEN
+            RANDOMIZE VAL(Parse$(MID$(L$, 11)))
+        ELSEIF LEFT$(L$, 7) = "_LIMIT " THEN
+            externalLimit = VAL(Parse$(MID$(L$, 8)))
+        ELSEIF LEFT$(L$, 1) = "'" OR LEFT$(L$, 4) = "REM " OR L$ = "'" OR L$ = "REM" OR L$ = "" THEN
+            'it's a comment.
+        ELSEIF LEFT$(L$, 4) = "KEY " THEN
+            IF _TRIM$(MID$(L$, 5)) = "ON" THEN
+                KEY ON
+            ELSEIF _TRIM$(MID$(L$, 5)) = "OFF" THEN
+                KEY OFF
+            ELSE
+                GOTO syntaxerror
+            END IF
+        ELSEIF L$ = "RUN" THEN
+            IF NOT running THEN
+                IF loaded THEN
+                    currentLine = 0
+                    currentDoLevel = 0
+                    ifLine = 0
+                    externalLimit = 0
+                    running = true
+                ELSE
+                    PRINT "No program loaded."
+                END IF
+            END IF
+        ELSEIF LEFT$(L$, 6) = "COLOR " THEN
+            DIM c$, c1$, c2$
+            c$ = MID$(L$, 7)
+            IF INSTR(c$, ",") THEN
+                c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
+                c2$ = MID$(c$, INSTR(c$, ",") + 1)
+                IF LEN(c1$) > 0 AND LEN(c2$) > 0 THEN
+                    COLOR VAL(Parse(c1$)), VAL(Parse(c2$))
+                ELSEIF LEN(c1$) > 0 AND LEN(c2$) = 0 THEN
+                    COLOR VAL(Parse(c1$))
+                ELSEIF LEN(c1$) = 0 AND LEN(c2$) > 0 THEN
+                    COLOR , VAL(Parse(c2$))
+                END IF
+            ELSE
+                COLOR VAL(Parse(c$))
+            END IF
+        ELSEIF LEFT$(L$, 7) = "_BLINK " THEN
+            IF _TRIM$(MID$(L$, 8)) = "ON" THEN
+                _BLINK ON
+            ELSEIF _TRIM$(MID$(L$, 8)) = "OFF" THEN
+                _BLINK OFF
+            ELSE
+                GOTO syntaxerror
+            END IF
+        ELSEIF LEFT$(L$, 7) = "LOCATE " THEN
+            c$ = MID$(L$, 8)
+            IF INSTR(c$, ",") THEN
+                c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
+                c2$ = MID$(c$, INSTR(c$, ",") + 1)
+                IF LEN(c1$) > 0 AND LEN(c2$) > 0 THEN
+                    LOCATE VAL(Parse$(c1$)), VAL(Parse$(c2$))
+                ELSEIF LEN(c1$) > 0 AND LEN(c2$) = 0 THEN
+                    LOCATE VAL(Parse$(c1$))
+                ELSEIF LEN(c1$) = 0 AND LEN(c2$) > 0 THEN
+                    LOCATE , VAL(Parse$(c2$))
+                END IF
+            ELSE
+                LOCATE VAL(Parse$(c$))
+            END IF
+        ELSEIF LEFT$(L$, 6) = "FILES " THEN
+            temp$ = Parse$(MID$(L1$, 7))
+            FILES temp$
+        ELSEIF L$ = "FILES" THEN
+            FILES
+        ELSEIF LEFT$(L$, 9) = "_SNDPLAY " THEN
+            _SNDPLAY VAL(Parse$(MID$(L$, 10)))
+        ELSEIF LEFT$(L$, 8) = "CIRCLE (" THEN
+            IF _PIXELSIZE(_DEST) = 0 THEN throwError 5: GOTO Parse.Done
+            Comma1% = INSTR(L$, ","): Comma2% = INSTR(Comma1% + 1, L$, ","): Comma3% = INSTR(Comma2% + 1, L$, ",")
+
+            DIM XPos1%, YPos1%, X1%, Y1%, Rad%, DrawClr%, EPos%, Elipse!, Arc%
+            DIM Comma4%, Comma5%, ArcBeg!, ArcEnd!, d##
+            XPos1% = INSTR(L$, " (") + 2
+            YPos1% = Comma1% + 1
+            X1% = VAL(Parse(MID$(L$, XPos1%, Comma1% - XPos1%)))
+            Y1% = VAL(Parse(MID$(L$, YPos1%, Comma2% - YPos1% - 1)))
+
+            Rad% = VAL(Parse(MID$(L$, Comma2% + 1, Comma3% - Comma2% - 1)))
+
+            c$ = LTRIM$(RTRIM$(LEFT$(MID$(L$, Comma3% + 1), 3))) 'Color attribute (variable or constant)
+            IF RIGHT$(c$, 1) = "," THEN c$ = LEFT$(c$, LEN(c$) - 1) 'If single-digit attribute
+
+            IF INSTR("0123456789", LEFT$(c$, 1)) > 0 THEN DrawClr% = VAL(c$) ELSE DrawClr% = VAL(Parse(c$))
+
+            EPos% = INSTR(L$, ", , , ")
+
+            IF EPos% > 0 THEN
+                EPos% = EPos% + 6: Elipse = VAL(Parse$(MID$(L$, EPos%)))
+            ELSE
+                Arc% = INSTR(Comma3% + 1, L$, ",")
+
+                IF Arc% > 0 THEN
+                    Comma4% = Arc%
+                    Comma5% = INSTR(Comma4% + 1, L$, ",")
+
+                    ArcBeg = VAL(Parse$(MID$(L$, Comma4% + 1, Comma5% - Comma4% - 1))) ': PRINT "ArcBeg:"; ArcBeg;   '* * * * Test PRINT
+                    ArcEnd = VAL(Parse$(MID$(L$, Comma5% + 1))) ': PRINT " ArcEnd:"; ArcEnd;
+
+                    IF INSTR(Comma5% + 1, L$, ",") > 0 THEN EPos% = INSTR(Comma5% + 1, L$, ",") + 1: Elipse = VAL(Parse$(MID$(L$, EPos%)))
+                END IF
+            END IF
+
+            IF Arc% > 0 AND Elipse = 0 THEN CIRCLE (X1%, Y1%), Rad%, DrawClr%, ArcBeg, ArcEnd: GOTO Circ.Done
+            IF Elipse > 0 AND Arc% = 0 THEN CIRCLE (X1%, Y1%), Rad%, DrawClr%, , , Elipse: GOTO Circ.Done
+            IF Arc% > 0 AND Elipse > 0 THEN CIRCLE (X1%, Y1%), Rad%, DrawClr%, ArcBeg, ArcEnd, Elipse: GOTO Circ.Done
+            CIRCLE (X1%, Y1%), Rad%, DrawClr% 'No arc, no elipse
+
+            Circ.Done: Rad% = 0: Arc% = 0: Elipse = 0: c$ = "": DrawClr% = 0: GOTO Parse.Done
+        ELSEIF L$ = "SLEEP" THEN
+            SLEEP
+        ELSEIF LEFT$(L$, 6) = "SLEEP " THEN
+            SLEEP VAL(Parse$(MID$(L$, 7)))
+        ELSEIF L$ = "PRINT" OR L$ = "?" THEN
+            PRINT
+        ELSEIF LEFT$(L$, 6) = "PRINT " OR LEFT$(L$, 1) = "?" THEN
+            IF LEFT$(L$, 2) = "? " THEN L1$ = "PRINT " + MID$(L1$, 3): L$ = L1$
+            IF LEFT$(L$, 1) = "?" THEN L1$ = "PRINT " + MID$(L1$, 2): L$ = L1$
+
+            DIM retainCursor AS _BYTE
+            IF RIGHT$(L$, 1) = ";" THEN
+                retainCursor = true
+                L$ = LEFT$(L$, LEN(L$) - 1)
+                L1$ = LEFT$(L1$, LEN(L$))
+            ELSE
+                retainCursor = false
+            END IF
+
+            PRINT Parse(MID$(L1$, 7));
+            IF NOT retainCursor THEN PRINT
+        ELSEIF LEFT$(L$, 7) = "_TITLE " THEN
+            temp$ = Parse$(MID$(L1$, 8))
+            _TITLE temp$
+        ELSEIF L$ = "CLS" THEN
+            CLS
+            IF debugging THEN
+                i = _DEST
+                _DEST _CONSOLE
+                CLS
+                _DEST i
+            END IF
+        ELSEIF L$ = "SYSTEM" OR L$ = "EXIT" THEN
+            SYSTEM
+        ELSEIF L$ = "END" THEN
+            IF running THEN running = false
+        ELSEIF LEFT$(L$, 6) = "INPUT " THEN
+            DIM varName$, d$, d%
+            varName$ = MID$(L1$, 7)
+            varIndex = addVar(varName$)
+            IF vars(varIndex).type = varTypeSTRING THEN
+                INPUT "", d$
+                strings(varIndex) = d$
+            ELSE
+                SELECT CASE vars(varIndex).type
+                    CASE varTypeINTEGER
+                        INPUT "", d%
+                        nums(varIndex) = d%
+                    CASE ELSE
+                        INPUT "", d##
+                        nums(varIndex) = d##
+                END SELECT
+            END IF
+        ELSEIF L$ = "DO" THEN
+            IF running THEN
+                currentDoLevel = currentDoLevel + 1
+                loopControl(currentDoLevel).firstLine = currentLine
+                loopControl(currentDoLevel).condition = 0
+            ELSE
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
+        ELSEIF LEFT$(L$, 9) = "DO UNTIL " THEN
+            IF running THEN
+                currentDoLevel = currentDoLevel + 1
+                loopControl(currentDoLevel).firstLine = currentLine
+                loopControl(currentDoLevel).condition = 1
+                IF VAL(Parse$(MID$(L$, 10))) <> 0 THEN
+                    GOTO treatAsExitDo
+                END IF
+            ELSE
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
+        ELSEIF LEFT$(L$, 9) = "DO WHILE " THEN
+            IF running THEN
+                currentDoLevel = currentDoLevel + 1
+                loopControl(currentDoLevel).firstLine = currentLine
+                loopControl(currentDoLevel).condition = 1
+                IF VAL(Parse$(MID$(L$, 10))) = 0 THEN
+                    GOTO treatAsExitDo
+                END IF
+            ELSE
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
+        ELSEIF LEFT$(L$, 5) = "GOTO " THEN
+            IF running THEN
+                DIM theLabel$
+                theLabel$ = MID$(L$, 6)
+
+                IF isNumber(theLabel$) THEN theLabel$ = theLabel$ + " " ELSE theLabel$ = theLabel$ + ": "
+                'look for label
+                FOR i = 1 TO UBOUND(program)
+                    temp$ = UCASE$(_TRIM$(program(i))) + " "
+                    IF LEFT$(temp$, INSTR(temp$, " ")) = UCASE$(theLabel$) THEN
+                        currentLine = i - 1
+                        GOTO Parse.Done
+                    END IF
+                NEXT
+                PRINT "Label not found on line"; currentLine: running = false: GOTO Parse.Done
+            ELSE
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
+        ELSEIF L$ = "LOOP" THEN
+            IF running THEN
+                treatAsLoop:
+                IF currentDoLevel > 0 AND loopControl(currentDoLevel).firstLine > 0 THEN
+                    currentLine = loopControl(currentDoLevel).firstLine - 1
+                    currentDoLevel = currentDoLevel - 1
+                ELSE
+                    IF currentDoLevel = 0 THEN
+                        'scan backwards until a DO is found
+                        FOR i = currentLine - 1 TO 1
+                            IF UCASE$(_TRIM$(program(i))) = "DO" OR LEFT$(UCASE$(_TRIM$(program(i))), 3) = "DO " THEN
+                                currentDoLevel = currentDoLevel + 1
+                                loopControl(currentDoLevel).firstLine = i
+                                loopControl(currentDoLevel).loopLine = currentLine
+                                GOTO treatAsLoop
+                            END IF
+                        NEXT
+                        IF i = 0 THEN PRINT "LOOP without DO on line"; currentLine: running = false: GOTO Parse.Done
+                    END IF
+                END IF
+            ELSE
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
+        ELSEIF LEFT$(L$, 11) = "LOOP UNTIL " THEN
+            IF NOT running THEN
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
+            IF currentDoLevel = 0 THEN PRINT "LOOP without DO on line"; currentLine: running = false: GOTO Parse.Done
+            IF loopControl(currentDoLevel).condition = 1 THEN PRINT "LOOP UNTIL/WHILE not allowed in the same block as DO UNTIL/WHILE on line"; currentLine: running = false: GOTO Parse.Done
+            loopControl(currentDoLevel).condition = 2
+            IF VAL(Parse$(MID$(L$, 12))) = 0 THEN
+                GOTO treatAsLoop
+            ELSE
+                currentDoLevel = currentDoLevel - 1
+            END IF
+        ELSEIF LEFT$(L$, 11) = "LOOP WHILE " THEN
+            IF NOT running THEN
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
+            IF currentDoLevel = 0 THEN PRINT "LOOP without DO on line"; currentLine: running = false: GOTO Parse.Done
+            IF loopControl(currentDoLevel).condition = 1 THEN PRINT "LOOP UNTIL/WHILE not allowed in the same block as DO UNTIL/WHILE on line"; currentLine: running = false: GOTO Parse.Done
+            IF VAL(Parse$(MID$(L$, 12))) <> 0 THEN
+                GOTO treatAsLoop
+            ELSE
+                currentDoLevel = currentDoLevel - 1
+            END IF
+        ELSEIF L$ = "EXIT DO" THEN
+            IF running THEN
+                IF currentDoLevel = 0 THEN
+                    PRINT "EXIT DO without DO on line"; currentLine: running = false: GOTO Parse.Done
+                END IF
+
+                treatAsExitDo:
+                IF loopControl(currentDoLevel).loopLine > 0 THEN
+                    currentLine = loopControl(currentDoLevel).loopLine
+                    currentDoLevel = currentDoLevel - 1
+                ELSE
+                    DO
+                        currentLine = currentLine + 1
+                        IF currentLine > UBOUND(program) THEN PRINT "DO without LOOP on line"; loopControl(currentDoLevel).firstLine: running = false: GOTO Parse.Done
+                        L1$ = program(currentLine)
+                        L1$ = LTRIM$(RTRIM$(L1$))
+                        L$ = UCASE$(L1$)
+                        IF L$ = "LOOP" THEN currentDoLevel = currentDoLevel - 1: EXIT DO
+                    LOOP
+                END IF
+            ELSE
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
+        ELSEIF LEFT$(L$, 7) = "SCREEN " THEN
+            SCREEN VAL(Parse$(MID$(L$, 8)))
+        ELSEIF L$ = "END IF" THEN
+            IF running THEN
+                IF ifLine = 0 THEN
+                    PRINT "END IF without IF - on line"; currentLine
+                    running = false
+                END IF
+            ELSE
+                PRINT "Not valid in immediate mode."
+            END IF
+        ELSEIF LEFT$(L$, 3) = "IF " THEN
+            IF NOT running THEN
+                PRINT "Not valid in immediate mode."
+            ELSE
+                IF RIGHT$(L$, 5) <> " THEN" THEN GOTO syntaxerror
+                DIM i$, i1$, i2$, s$, r AS _BYTE
+                DIM i1##, i2##, i1isText AS _BYTE, i2isText AS _BYTE
+
+                ifLine = currentLine
+
+                i$ = MID$(L$, 4, LEN(L$) - 8)
+
+                IF INSTR(i$, "=") THEN
+                    s$ = "="
+                ELSEIF INSTR(i$, ">") THEN
+                    s$ = ">"
+                ELSEIF INSTR(i$, "<") THEN
+                    s$ = "<"
+                ELSE
+                    s$ = ""
+                END IF
+
+                i1$ = LEFT$(i$, INSTR(i$, s$) - 1)
+                i2$ = MID$(i$, INSTR(i$, s$) + 1)
+
+                i1$ = Parse$(i1$)
+                i1## = VAL(i1$)
+                IF isNumber(i1$) THEN i1isText = false ELSE i1isText = true
+                i2$ = Parse$(i2$)
+                i2## = VAL(i2$)
+                IF isNumber(i2$) THEN i2isText = false ELSE i2isText = true
+
+                IF i1isText <> i2isText THEN throwError 13: GOTO Parse.Done
+
+                r = false
+                SELECT CASE s$
+                    CASE "="
+                        IF i1isText THEN
+                            IF Parse$(i1$) = Parse$(i2$) THEN r = true
+                        ELSE
+                            IF i1## = i2## THEN r = true
+                        END IF
+                    CASE ">"
+                        IF i1isText THEN
+                            IF Parse$(i1$) > Parse$(i2$) THEN r = true
+                        ELSE
+                            IF i1## > i2## THEN r = true
+                        END IF
+                    CASE "<"
+                        IF i1isText THEN
+                            IF Parse$(i1$) < Parse$(i2$) THEN r = true
+                        ELSE
+                            IF i1## < i2## THEN r = true
+                        END IF
+                END SELECT
+
+                IF r = false THEN
+                    DO
+                        currentLine = currentLine + 1
+                        IF currentLine > UBOUND(program) THEN PRINT "IF without END IF on line"; ifLine: running = false: GOTO Parse.Done
+                        L1$ = program(currentLine)
+                        L1$ = LTRIM$(RTRIM$(L1$))
+                        L$ = UCASE$(L1$)
+                        IF L$ = "END IF" THEN ifLine = 0: EXIT DO
+                    LOOP
+                END IF
+            END IF
+        ELSEIF INSTR(L$, "=") > 0 THEN
+            'Assignment
+            varName$ = RTRIM$(LEFT$(L1$, INSTR(L1$, "=") - 1))
+            varIndex = addVar(varName$) 'either add or acquire existing index
+
+            IF vars(varIndex).protected THEN
+                PRINT "Variable is protected";
+                IF running THEN
+                    running = false
+                    PRINT " on line "; currentLine
+                ELSE
+                    PRINT
+                END IF
+
+                GOTO Parse.Done
+            END IF
+
+            DIM v$, t$
+            IF vars(varIndex).type = varTypeSTRING THEN
+                v$ = RTRIM$(LTRIM$(MID$(L1$, INSTR(L1$, "=") + 1)))
+                strings(varIndex) = Parse(v$)
+            ELSE
+                v$ = MID$(L1$, INSTR(L1$, "=") + 1)
+
+                t$ = Parse(v$)
+
+                IF vars(varIndex).type = varTypeINTEGER THEN
+                    nums(varIndex) = INT(VAL(t$))
+                ELSE
+                    nums(varIndex) = VAL(t$)
                 END IF
             END IF
         ELSE
-            PRINT "Not valid in immediate mode."
-            GOTO Parse.Done
-        END IF
-    ELSEIF LEFT$(L$, 11) = "LOOP UNTIL " THEN
-        IF NOT running THEN
-            PRINT "Not valid in immediate mode."
-            GOTO Parse.Done
-        END IF
-        IF currentDoLevel = 0 THEN PRINT "LOOP without DO on line"; currentLine: running = false: GOTO Parse.Done
-        IF loopControl(currentDoLevel).condition = 1 THEN PRINT "LOOP UNTIL/WHILE not allowed in the same block as DO UNTIL/WHILE on line"; currentLine: running = false: GOTO Parse.Done
-        loopControl(currentDoLevel).condition = 2
-        IF VAL(Parse$(MID$(L$, 12))) = 0 THEN
-            GOTO treatAsLoop
-        ELSE
-            currentDoLevel = currentDoLevel - 1
-        END IF
-    ELSEIF LEFT$(L$, 11) = "LOOP WHILE " THEN
-        IF NOT running THEN
-            PRINT "Not valid in immediate mode."
-            GOTO Parse.Done
-        END IF
-        IF currentDoLevel = 0 THEN PRINT "LOOP without DO on line"; currentLine: running = false: GOTO Parse.Done
-        IF loopControl(currentDoLevel).condition = 1 THEN PRINT "LOOP UNTIL/WHILE not allowed in the same block as DO UNTIL/WHILE on line"; currentLine: running = false: GOTO Parse.Done
-        IF VAL(Parse$(MID$(L$, 12))) <> 0 THEN
-            GOTO treatAsLoop
-        ELSE
-            currentDoLevel = currentDoLevel - 1
-        END IF
-    ELSEIF L$ = "EXIT DO" THEN
-        IF running THEN
-            IF currentDoLevel = 0 THEN
-                PRINT "EXIT DO without DO on line"; currentLine: running = false: GOTO Parse.Done
-            END IF
-
-            treatAsExitDo:
-            IF loopControl(currentDoLevel).loopLine > 0 THEN
-                currentLine = loopControl(currentDoLevel).loopLine
-                currentDoLevel = currentDoLevel - 1
+            'label?
+            L$ = L$ + " "
+            IF LEN(L$) > 2 AND (RIGHT$(LEFT$(L$, INSTR(L$, " ") - 1), 1) = ":" OR isNumber(RTRIM$(L$))) THEN
+                'it's a label
             ELSE
-                DO
-                    currentLine = currentLine + 1
-                    IF currentLine > UBOUND(program) THEN PRINT "DO without LOOP on line"; loopControl(currentDoLevel).firstLine: running = false: GOTO Parse.Done
-                    L1$ = program(currentLine)
-                    L1$ = LTRIM$(RTRIM$(L1$))
-                    L$ = UCASE$(L1$)
-                    IF L$ = "LOOP" THEN currentDoLevel = currentDoLevel - 1: EXIT DO
-                LOOP
-            END IF
-        ELSE
-            PRINT "Not valid in immediate mode."
-            GOTO Parse.Done
-        END IF
-    ELSEIF LEFT$(L$, 7) = "SCREEN " THEN
-        SCREEN VAL(Parse$(MID$(L$, 8)))
-    ELSEIF L$ = "END IF" THEN
-        IF running THEN
-            IF ifLine = 0 THEN
-                PRINT "END IF without IF - on line"; currentLine
-                running = false
-            END IF
-        ELSE
-            PRINT "Not valid in immediate mode."
-        END IF
-    ELSEIF LEFT$(L$, 3) = "IF " THEN
-        IF NOT running THEN
-            PRINT "Not valid in immediate mode."
-        ELSE
-            IF RIGHT$(L$, 5) <> " THEN" THEN GOTO syntaxerror
-            DIM i$, i1$, i2$, s$, r AS _BYTE
-            DIM i1##, i2##, i1isText AS _BYTE, i2isText AS _BYTE
-
-            ifLine = currentLine
-
-            i$ = MID$(L$, 4, LEN(L$) - 8)
-
-            IF INSTR(i$, "=") THEN
-                s$ = "="
-            ELSEIF INSTR(i$, ">") THEN
-                s$ = ">"
-            ELSEIF INSTR(i$, "<") THEN
-                s$ = "<"
-            ELSE
-                s$ = ""
-            END IF
-
-            i1$ = LEFT$(i$, INSTR(i$, s$) - 1)
-            i2$ = MID$(i$, INSTR(i$, s$) + 1)
-
-            i1$ = Parse$(i1$)
-            i1## = VAL(i1$)
-            IF isNumber(i1$) THEN i1isText = false ELSE i1isText = true
-            i2$ = Parse$(i2$)
-            i2## = VAL(i2$)
-            IF isNumber(i2$) THEN i2isText = false ELSE i2isText = true
-
-            IF i1isText <> i2isText THEN throwError 13: GOTO Parse.Done
-
-            r = false
-            SELECT CASE s$
-                CASE "="
-                    IF i1isText THEN
-                        IF Parse$(i1$) = Parse$(i2$) THEN r = true
-                    ELSE
-                        IF i1## = i2## THEN r = true
-                    END IF
-                CASE ">"
-                    IF i1isText THEN
-                        IF Parse$(i1$) > Parse$(i2$) THEN r = true
-                    ELSE
-                        IF i1## > i2## THEN r = true
-                    END IF
-                CASE "<"
-                    IF i1isText THEN
-                        IF Parse$(i1$) < Parse$(i2$) THEN r = true
-                    ELSE
-                        IF i1## < i2## THEN r = true
-                    END IF
-            END SELECT
-
-            IF r = false THEN
-                DO
-                    currentLine = currentLine + 1
-                    IF currentLine > UBOUND(program) THEN PRINT "IF without END IF on line"; ifLine: running = false: GOTO Parse.Done
-                    L1$ = program(currentLine)
-                    L1$ = LTRIM$(RTRIM$(L1$))
-                    L$ = UCASE$(L1$)
-                    IF L$ = "END IF" THEN ifLine = 0: EXIT DO
-                LOOP
-            END IF
-        END IF
-    ELSEIF INSTR(L$, "=") > 0 THEN
-        'Assignment
-        varName$ = RTRIM$(LEFT$(L1$, INSTR(L1$, "=") - 1))
-        varIndex = addVar(varName$) 'either add or acquire existing index
-
-        IF vars(varIndex).protected THEN
-            PRINT "Variable is protected";
-            IF running THEN
-                running = false
-                PRINT " on line "; currentLine
-            ELSE
-                PRINT
-            END IF
-
-            GOTO Parse.Done
-        END IF
-
-        DIM v$, t$
-        IF vars(varIndex).type = varTypeSTRING THEN
-            v$ = RTRIM$(LTRIM$(MID$(L1$, INSTR(L1$, "=") + 1)))
-            strings(varIndex) = Parse(v$)
-        ELSE
-            v$ = MID$(L1$, INSTR(L1$, "=") + 1)
-
-            t$ = Parse(v$)
-
-            IF vars(varIndex).type = varTypeINTEGER THEN
-                nums(varIndex) = INT(VAL(t$))
-            ELSE
-                nums(varIndex) = VAL(t$)
-            END IF
-        END IF
-    ELSE
-        'label?
-        L$ = L$ + " "
-        IF LEN(L$) > 2 AND (RIGHT$(LEFT$(L$, INSTR(L$, " ") - 1), 1) = ":" OR isNumber(RTRIM$(L$))) THEN
-            'it's a label
-        ELSE
-            syntaxerror:
-            IF LEN(L$) THEN PRINT "Syntax error";
-            IF running THEN
-                PRINT " on line"; currentLine
-                running = false
-            ELSE
-                PRINT
+                syntaxerror:
+                IF LEN(L$) THEN PRINT "Syntax error";
+                IF running THEN
+                    PRINT " on line"; currentLine
+                    running = false
+                ELSE
+                    PRINT
+                END IF
             END IF
         END IF
     END IF
 
     Parse.Done:
-
+    IF LEN(Ucontinuation$) THEN L$ = Ucontinuation$: L1$ = continuation$: GOTO redoThisLine
     IF externalLimit > 0 AND running THEN _LIMIT externalLimit
 LOOP
 
