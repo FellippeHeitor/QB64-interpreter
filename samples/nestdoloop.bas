@@ -1,3 +1,5 @@
+i = 0
+j = 0
 DO
     i = i + 1
     PRINT "I =" + STR$(i)
