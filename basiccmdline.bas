@@ -825,9 +825,16 @@ DO
             END IF
         ELSEIF LEFT$(L$, 7) = "SCREEN " THEN
             SCREEN VAL(Parse$(MID$(L$, 8)))
-        ELSEIF L$ = "ELSE" THEN
+        ELSEIF L$ = "ELSE" OR LEFT$(L$, 7) = "ELSEIF " THEN
             IF running THEN
-                'skip "ELSE" block (should have already been skipped in the IF evaluation)
+                'skip "ELSE"/"ELSEIF" block (should have already been skipped in the IF evaluation)
+                IF LEFT$(L$, 7) = "ELSEIF " AND RIGHT$(L$, 5) <> " THEN" THEN
+                    PRINT "Expected ELSEIF condition THEN on line"; currentLine
+                    running = false
+                    GOTO Parse.Done
+                END IF
+                temp$ = L$
+                IF LEN(L$) > 4 THEN temp$ = "ELSEIF"
                 DO
                     j = currentLine
                     currentLine = currentLine + 1
@@ -844,7 +851,7 @@ DO
                     L1$ = LTRIM$(RTRIM$(L1$))
                     L$ = UCASE$(L1$)
                     IF L$ = "END IF" OR L$ = "ENDIF" THEN ifBlock = 0: EXIT DO
-                    IF L$ = "ELSE" THEN
+                    IF L$ = "ELSE" AND temp$ = "ELSE" THEN
                         PRINT "ELSE used more than once on line"; currentLine
                         running = false
                         GOTO Parse.Done
@@ -861,7 +868,7 @@ DO
             END IF
         ELSEIF LEFT$(L$, 3) = "IF " THEN
             IF RIGHT$(L$, 5) = " THEN" THEN
-                'IF-THEN-ELSE-END IF block
+                'IF-THEN-ELSEIF-ELSE-END IF block
                 IF NOT running THEN
                     PRINT "IF blocks are not valid in immediate mode."
                     GOTO Parse.Done
@@ -869,6 +876,7 @@ DO
 
                 DIM i$
 
+                checkBlockCondition:
                 i$ = MID$(L$, 4, LEN(L$) - 8)
 
                 IF VAL(Parse(i$)) = 0 THEN 'condition is false
@@ -879,7 +887,21 @@ DO
                         L1$ = LTRIM$(RTRIM$(L1$))
                         L$ = UCASE$(L1$)
                         IF L$ = "END IF" OR L$ = "ENDIF" THEN ifBlock = 0: EXIT DO
+                        IF LEFT$(L$, 7) = "ELSEIF " THEN
+                            IF RIGHT$(L$, 5) = " THEN" THEN
+                                L$ = MID$(L$, 5)
+                                L1$ = MID$(L1$, 5)
+                                GOTO checkBlockCondition
+                            ELSE
+                                PRINT "Expected ELSEIF condition THEN on line"; currentLine: running = false: GOTO Parse.Done
+                            END IF
+                        END IF
                         IF L$ = "ELSE" THEN EXIT DO
+                        IF LEFT$(L$, 5) = "ELSE " THEN
+                            L$ = MID$(L$, 6)
+                            L1$ = MID$(L1$, 6)
+                            GOTO redoThisLine
+                        END IF
                     LOOP
                 ELSE
                     ifBlock = 1 'if block evaluated as true
@@ -889,7 +911,7 @@ DO
                 db_echo "Single-line IF, line" + STR$(currentLine)
                 j = Find(1, L$, " THEN ")
                 IF j = 0 THEN
-                    PRINT "Expected: IF condition THEN statements"
+                    PRINT "Expected IF condition THEN statements"
                     IF running THEN running = false
                     GOTO Parse.Done
                 END IF
