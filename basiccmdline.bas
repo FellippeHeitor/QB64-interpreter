@@ -54,13 +54,13 @@ REDIM SHARED nums(0) AS _FLOAT
 REDIM SHARED program(0) AS STRING
 DIM SHARED totalVars AS LONG, varType_DEFAULT AS _BYTE
 DIM SHARED thisScope$, currentLine AS LONG, lineThatErrored AS LONG
-DIM varIndex AS LONG, i AS LONG, j AS LONG, quote AS LONG
+DIM varIndex AS LONG, i AS LONG, j AS LONG
 DIM continuation$, Ucontinuation$
 DIM loopControl(100) AS loopControlType
 DIM currentDoLevel AS INTEGER
 DIM ifBlock AS LONG
 DIM SHARED errorHappened AS _BYTE
-DIM SHARED k AS LONG
+DIM SHARED keyhit AS LONG
 DIM externalLimit AS INTEGER
 DIM temp$, L$, L1$, saveFile$, q AS STRING * 1, k$
 DIM MyBad AS _BYTE, Comma1 AS INTEGER, Comma2 AS INTEGER, Comma3 AS INTEGER
@@ -131,9 +131,9 @@ DATA _readbit,_setbit,_resetbit,_togglebit
 DATA *end*
 
 DO
-    k = _KEYHIT
+    keyhit = _KEYHIT
 
-    IF (ABS(k) = ASC("C") OR ABS(k) = ASC("c")) AND (_KEYDOWN(100305) OR _KEYDOWN(100306)) THEN
+    IF (ABS(keyhit) = ASC("C") OR ABS(keyhit) = ASC("c")) AND (_KEYDOWN(100305) OR _KEYDOWN(100306)) THEN
         PRINT "Break."
         IF running THEN running = false
         _KEYCLEAR
@@ -154,7 +154,8 @@ DO
     L$ = UCASE$(L1$)
 
     redoThisLine:
-
+    db_echo "running line" + STR$(currentLine)
+    db_echo ">> " + L1$
     IF isNumber(LEFT$(L$, INSTR(L$, " ") - 1)) THEN
         IF NOT running THEN
             IF loaded THEN
@@ -175,39 +176,28 @@ DO
     ELSE
         'look for : separators
         IF LEFT$(L$, 3) <> "IF " THEN
-            j = INSTR(L$, ":")
+            j = Find(1, L$, ":")
             IF j > 0 AND j < LEN(L$) THEN
-                keepLookingForSeparator:
-                quote = false
-                FOR i = 1 TO j
-                    IF ASC(L$, i) = 34 THEN quote = NOT quote
-                NEXT
-
-                IF NOT quote THEN
-                    continuation$ = _TRIM$(MID$(L1$, j + 1))
-                    Ucontinuation$ = _TRIM$(MID$(L$, j + 1))
-                    L1$ = _TRIM$(LEFT$(L1$, j - 1))
-                    L$ = _TRIM$(LEFT$(L$, j - 1))
-                ELSE
-                    j = INSTR(j + 1, L$, ":")
-                    IF j > 0 THEN
-                        GOTO keepLookingForSeparator
-                    ELSE
-                        continuation$ = ""
-                        Ucontinuation$ = ""
-                    END IF
-                END IF
+                continuation$ = _TRIM$(MID$(L1$, j + 1))
+                Ucontinuation$ = _TRIM$(MID$(L$, j + 1))
+                L1$ = _TRIM$(LEFT$(L1$, j - 1))
+                L$ = _TRIM$(LEFT$(L$, j - 1))
             ELSEIF j = LEN(L$) THEN
                 IF INSTR(L$, " ") > 0 THEN
                     L$ = LEFT$(L$, LEN(L$) - 1)
                     L1$ = LEFT$(L1$, LEN(L1$) - 1)
+                    continuation$ = ""
+                    Ucontinuation$ = ""
                 ELSE
-                    'likely a label
+                    'likely a label, leave it as is
                 END IF
             ELSE
                 continuation$ = ""
                 Ucontinuation$ = ""
             END IF
+        ELSE
+            continuation$ = ""
+            Ucontinuation$ = ""
         END IF
 
         IF LEFT$(L$, 5) = "LOAD " THEN
@@ -323,7 +313,7 @@ DO
         ELSEIF LEFT$(L$, 5) = "SAVE " THEN
             IF NOT running THEN
                 saveFile$ = Parse$(MID$(L$, 6))
-                db_echo "About to save '" + saveFile$ + "'"
+                'db_echo "About to save '" + saveFile$ + "'"
                 IF loaded THEN
                     IF saveFile$ <> loadedFile$ THEN
                         IF _FILEEXISTS(saveFile$) THEN
@@ -336,7 +326,7 @@ DO
                         END IF
                     ELSE
                         overWrite:
-                        db_echo "About to OPEN AS '" + LTRIM$(STR$(ff)) + "'"
+                        'db_echo "About to OPEN AS '" + LTRIM$(STR$(ff)) + "'"
                         ff = FREEFILE
                         OPEN saveFile$ FOR OUTPUT AS ff
                         FOR i = 1 TO UBOUND(program)
@@ -430,8 +420,8 @@ DO
         ELSEIF L$ = "LIST VARIABLES" THEN
             IF NOT running THEN
                 j = 0
-                db_echo "Listing variables"
-                db_echo "Total vars:" + STR$(totalVars)
+                'db_echo "Listing variables"
+                'db_echo "Total vars:" + STR$(totalVars)
                 FOR i = 1 TO totalVars
                     IF NOT vars(i).protected THEN
                         j = j + 1
@@ -562,6 +552,7 @@ DO
                     ifBlock = 0
                     externalLimit = 0
                     running = true
+                    _KEYCLEAR
                 ELSE
                     PRINT "No program loaded."
                 END IF
@@ -870,7 +861,7 @@ DO
             END IF
         ELSEIF LEFT$(L$, 3) = "IF " THEN
             IF RIGHT$(L$, 5) = " THEN" THEN
-                'IF-THEN-END IF block
+                'IF-THEN-ELSE-END IF block
                 IF NOT running THEN
                     PRINT "IF blocks are not valid in immediate mode."
                     GOTO Parse.Done
@@ -896,30 +887,38 @@ DO
             ELSE
                 'single-line IF statement
                 db_echo "Single-line IF, line" + STR$(currentLine)
-                j = INSTR(L$, " THEN ")
-                findThen:
-                quote = false
-                FOR i = 1 TO j
-                    IF ASC(L$, i) = 34 THEN quote = NOT quote
-                NEXT
-                IF quote THEN
-                    j = INSTR(j + 1, L$, " THEN ")
-                    IF j = 0 THEN
-                        PRINT "Expected: IF condition THEN statements"
-                        IF running THEN running = false
-                        GOTO Parse.Done
+                j = Find(1, L$, " THEN ")
+                IF j = 0 THEN
+                    PRINT "Expected: IF condition THEN statements"
+                    IF running THEN running = false
+                    GOTO Parse.Done
+                END IF
+
+                i$ = MID$(LEFT$(L1$, j), 3)
+                db_echo "Condition: '" + i$ + "'"
+                IF VAL(Parse(i$)) <> 0 THEN
+                    db_echo "condition passed! ---------------->"
+                    L$ = MID$(L$, j + 6)
+                    L1$ = MID$(L1$, j + 6)
+                    j = Find(1, L$, " ELSE ")
+                    IF j = 0 THEN j = Find(1, L$, ":ELSE ")
+                    IF j > 0 THEN
+                        'remove ELSE part
+                        L$ = LEFT$(L$, j - 1)
+                        L1$ = LEFT$(L1$, j - 1)
                     END IF
+                    db_echo "Redoing line as '" + L$ + "'"
+                    GOTO redoThisLine
                 ELSE
-                    i$ = MID$(LEFT$(L1$, j), 3)
-                    db_echo "Condition: '" + i$ + "'"
-                    IF VAL(Parse(i$)) <> 0 THEN
-                        db_echo "condition passed! ---------------->"
+                    db_echo "condition is false! <----------------"
+                    'look for ELSE
+                    j = Find(j, L$, " ELSE ")
+                    IF j = 0 THEN j = Find(1, L$, ":ELSE ")
+                    IF j THEN
                         L$ = MID$(L$, j + 6)
                         L1$ = MID$(L1$, j + 6)
-                        db_echo "Redoing line as '" + L$ + "'"
+                        db_echo "ELSE: Redoing line as '" + L$ + "'"
                         GOTO redoThisLine
-                    ELSE
-                        db_echo "condition is false! <----------------"
                     END IF
                 END IF
             END IF
@@ -1109,13 +1108,13 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
     DIM varIndex AS LONG
     DIM temp##, temp$
 
-    db_echo "entering getval(): " + __c$
+    'db_echo "entering getval(): " + __c$
 
     c$ = LTRIM$(RTRIM$(__c$))
     foundAsText = false
 
     IF LEFT$(c$, 1) = CHR$(34) THEN
-        db_echo "literal string"
+        'db_echo "literal string"
         foundAsText = true
         textReturn$ = removeQuote$(c$)
         EXIT FUNCTION
@@ -1131,9 +1130,9 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
     varIndex = searchVar(c$)
     IF varIndex THEN
         IF vars(varIndex).protected THEN
-            db_echo "returning QB64 function"
-            db_echo "temp## =" + STR$(temp##)
-            db_echo "temp$  =" + CHR$(34) + temp$ + CHR$(34)
+            'db_echo "returning QB64 function"
+            'db_echo "temp## =" + STR$(temp##)
+            'db_echo "temp$  =" + CHR$(34) + temp$ + CHR$(34)
             SELECT CASE RTRIM$(vars(varIndex).name)
                 CASE "cos"
                     GetVal## = COS(temp##)
@@ -1232,7 +1231,7 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
                 CASE "_keydown"
                     GetVal## = _KEYDOWN(temp##)
                 CASE "_keyhit"
-                    GetVal## = _KEYHIT
+                    GetVal## = keyhit
                 CASE "_windowhandle"
                     GetVal## = _WINDOWHANDLE
                 CASE "_screenimage"
@@ -1556,25 +1555,25 @@ FUNCTION GetVal## (__c$, foundAsText AS _BYTE, textReturn$)
                     'GetVal## = _togglebit
             END SELECT
         ELSEIF vars(varIndex).type = varTypeSTRING THEN
-            db_echo "found in strings()"
+            'db_echo "found in strings()"
             foundAsText = true
             textReturn$ = strings(varIndex)
         ELSE
             GetVal## = nums(varIndex)
-            db_echo "returning nums()"
+            'db_echo "returning nums()"
         END IF
     ELSE
-        db_echo "not found as var"
+        'db_echo "not found as var"
         IF detectType%%(c$) = varTypeSTRING THEN
             foundAsText = true
             textReturn$ = ""
-            db_echo "returning an empty string"
+            'db_echo "returning an empty string"
         ELSE
             IF isNumber(c$) THEN
                 GetVal## = VAL(c$)
-                db_echo "returning val()"
+                'db_echo "returning val()"
             ELSE
-                db_echo "returning 0"
+                'db_echo "returning 0"
             END IF
         END IF
     END IF
@@ -1591,7 +1590,7 @@ FUNCTION Parse$ (__inputExpr AS STRING)
     REDIM oe(0) AS LONG
     REDIM strs(0) AS STRING
 
-    db_echo "------------------ Parsing: " + __inputExpr
+    'db_echo "------------------ Parsing: " + __inputExpr
 
     inputExpr = "(" + __inputExpr + ")"
 
@@ -1713,7 +1712,7 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
         NEXT
     END IF
 
-    db_echo "* Entering Compute##(): " + expr
+    'db_echo "* Entering Compute##(): " + expr
 
     'break down expr into element()
     FOR i = 1 TO LEN(expr)
@@ -1745,9 +1744,9 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                 el$ = el$ + element(l)
             END IF
         NEXT
-        _ECHO "** Total elements:" + STR$(tempElCount) + " **"
-        _ECHO el$
-        _ECHO "     ***"
+        'db_echo "** Total elements:" + STR$(tempElCount) + " **"
+        'db_echo el$
+        'db_echo "     ***"
     END IF
 
     FOR i = 1 TO LEN(validOP$)
@@ -1767,7 +1766,7 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                     op1## = GetVal(element(j - l), getvalTxtRet1, getvalTxtResult1)
                     IF getvalTxtRet1 THEN txtop1$ = getvalTxtResult1
                 END IF
-                db_echo "element(j - l) = " + element(j - l)
+                'db_echo "element(j - l) = " + element(j - l)
                 m = 1
                 IF j + m <= totalElements THEN
                     DO UNTIL LEN(_TRIM$(element(j + m))) > 0 AND INSTR(validOP$, element(j + m)) = 0
@@ -1781,9 +1780,9 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                     op2## = GetVal(element(j + m), getvalTxtRet2, getvalTxtResult2)
                     IF getvalTxtRet2 THEN txtop2$ = getvalTxtResult2
                 END IF
-                db_echo "element(j + m) = " + element(j + m)
-                db_echo "op1=" + STR$(op1##) + "; oper=" + op(i) + "; op2=" + STR$(op2##)
-                db_echo "txtop1=" + txtop1$ + "; oper=" + op(i) + "; txtop2=" + txtop2$
+                'db_echo "element(j + m) = " + element(j + m)
+                'db_echo "op1=" + STR$(op1##) + "; oper=" + op(i) + "; op2=" + STR$(op2##)
+                'db_echo "txtop1=" + txtop1$ + "; oper=" + op(i) + "; txtop2=" + txtop2$
                 SELECT CASE op(i)
                     CASE "^"
                         IF getvalTxtRet1 OR getvalTxtRet2 THEN throwError 13: EXIT FUNCTION
@@ -1842,8 +1841,8 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                             throwError 13: EXIT FUNCTION
                         END IF
                 END SELECT
-                db_echo "temp result## =" + STR$(result##)
-                db_echo "temp txtresult$ =" + txtresult$
+                'db_echo "temp result## =" + STR$(result##)
+                'db_echo "temp txtresult$ =" + txtresult$
                 element(j - l) = ""
                 element(j + m) = ""
                 IF foundAsText THEN
@@ -1861,9 +1860,9 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                             el$ = el$ + element(l)
                         END IF
                     NEXT
-                    _ECHO "** Total elements:" + STR$(tempElCount) + " **"
-                    _ECHO el$
-                    _ECHO "     ***"
+                    'db_echo "** Total elements:" + STR$(tempElCount) + " **"
+                    'db_echo el$
+                    'db_echo "     ***"
                 END IF
             END IF
         NEXT
@@ -1987,3 +1986,22 @@ SUB throwError (code AS INTEGER)
     END IF
     errorHappened = true
 END SUB
+
+FUNCTION Find& (start AS LONG, text$, subtext$)
+    'like INSTR, but searches for subtext$ only outside quotation marks
+    DIM i AS LONG, p AS LONG, quote AS _BYTE, lastQuote AS LONG
+
+    p = start - 1
+    DO
+        p = INSTR(p + 1, text$, subtext$)
+        IF p = 0 THEN EXIT FUNCTION
+
+        quote = false
+        IF lastQuote = 0 THEN lastQuote = 1
+        FOR i = lastQuote TO p
+            IF ASC(text$, i) = 34 THEN lastQuote = i: quote = NOT quote
+        NEXT
+    LOOP WHILE quote
+
+    Find& = p
+END FUNCTION
