@@ -27,11 +27,12 @@ TYPE vartype
     protected AS _BYTE
 END TYPE
 
-TYPE loopControlType
-    level AS INTEGER
+TYPE levelControlType
     firstLine AS LONG
-    loopLine AS LONG
-    condition AS _BYTE '0 = no condition; 1 = DO + condition; 2 = LOOP + condition
+    lastLine AS LONG
+    condition AS _BYTE
+    'For DO/LOOP blocks:
+    '    0 = no condition; 1 = DO + condition; 2 = LOOP + condition
 END TYPE
 
 CONST varType_FLOAT = 0
@@ -56,9 +57,8 @@ DIM SHARED totalVars AS LONG, varType_DEFAULT AS _BYTE
 DIM SHARED thisScope$, currentLine AS LONG, lineThatErrored AS LONG
 DIM varIndex AS LONG, i AS LONG, j AS LONG
 DIM continuation$, Ucontinuation$
-DIM loopControl(100) AS loopControlType
-DIM currentDoLevel AS INTEGER
-DIM ifBlock AS LONG
+DIM loopControl(100) AS levelControlType
+DIM currentDoLevel AS INTEGER, currentIfLevel AS INTEGER
 DIM SHARED errorHappened AS _BYTE
 DIM SHARED keyhit AS LONG
 DIM externalLimit AS INTEGER
@@ -219,8 +219,9 @@ DO
         ELSEIF L$ = "RELOAD" THEN
             IF NOT running THEN
                 IF loaded THEN
-                    L1$ = "LOAD " + loadedFile$
-                    GOTO tryWithExtension
+                    L1$ = "LOAD " + CHR$(34) + loadedFile$ + CHR$(34)
+                    L$ = UCASE$(L1$)
+                    GOTO redoThisLine
                 ELSE
                     PRINT "No program loaded."
                 END IF
@@ -549,7 +550,7 @@ DO
                 IF loaded THEN
                     currentLine = 0
                     currentDoLevel = 0
-                    ifBlock = 0
+                    currentIfLevel = 0
                     externalLimit = 0
                     running = true
                     _KEYCLEAR
@@ -763,7 +764,7 @@ DO
                             IF UCASE$(_TRIM$(program(i))) = "DO" OR LEFT$(UCASE$(_TRIM$(program(i))), 3) = "DO " THEN
                                 currentDoLevel = currentDoLevel + 1
                                 loopControl(currentDoLevel).firstLine = i
-                                loopControl(currentDoLevel).loopLine = currentLine
+                                loopControl(currentDoLevel).lastLine = currentLine
                                 GOTO treatAsLoop
                             END IF
                         NEXT
@@ -806,8 +807,8 @@ DO
                 END IF
 
                 treatAsExitDo:
-                IF loopControl(currentDoLevel).loopLine > 0 THEN
-                    currentLine = loopControl(currentDoLevel).loopLine
+                IF loopControl(currentDoLevel).lastLine > 0 THEN
+                    currentLine = loopControl(currentDoLevel).lastLine
                     currentDoLevel = currentDoLevel - 1
                 ELSE
                     DO
@@ -838,8 +839,8 @@ DO
                 DO
                     j = currentLine
                     currentLine = currentLine + 1
-                    IF currentLine > UBOUND(program) AND ifBlock > 0 THEN
-                        PRINT "IF without END IF on line"; ifBlock
+                    IF currentLine > UBOUND(program) AND currentIfLevel > 0 THEN
+                        PRINT "IF without END IF on line"; currentLine
                         running = false
                         GOTO Parse.Done
                     ELSEIF currentLine > UBOUND(program) THEN
@@ -850,7 +851,7 @@ DO
                     L1$ = program(currentLine)
                     L1$ = LTRIM$(RTRIM$(L1$))
                     L$ = UCASE$(L1$)
-                    IF L$ = "END IF" OR L$ = "ENDIF" THEN ifBlock = 0: EXIT DO
+                    IF L$ = "END IF" OR L$ = "ENDIF" THEN currentIfLevel = currentIfLevel - 1: EXIT DO
                     IF L$ = "ELSE" AND temp$ = "ELSE" THEN
                         PRINT "ELSE used more than once on line"; currentLine
                         running = false
@@ -862,7 +863,7 @@ DO
             END IF
         ELSEIF L$ = "END IF" OR L$ = "ENDIF" THEN
             IF running THEN
-                ifBlock = 0
+                currentIfLevel = currentIfLevel - 1
             ELSE
                 PRINT "Not valid in immediate mode."
             END IF
@@ -876,35 +877,58 @@ DO
 
                 DIM i$
 
+                currentIfLevel = currentIfLevel + 1
+                db_echo "IF block, line" + STR$(currentLine)
+                db_echo "Current IF level:" + STR$(currentIfLevel)
+
                 checkBlockCondition:
                 i$ = MID$(L$, 4, LEN(L$) - 8)
 
                 IF VAL(Parse(i$)) = 0 THEN 'condition is false
+                    j = currentIfLevel
                     DO
                         currentLine = currentLine + 1
-                        IF currentLine > UBOUND(program) THEN PRINT "IF without END IF on line"; ifBlock: running = false: GOTO Parse.Done
+                        IF currentLine > UBOUND(program) THEN PRINT "IF without END IF on line"; currentLine: running = false: GOTO Parse.Done
                         L1$ = program(currentLine)
                         L1$ = LTRIM$(RTRIM$(L1$))
                         L$ = UCASE$(L1$)
-                        IF L$ = "END IF" OR L$ = "ENDIF" THEN ifBlock = 0: EXIT DO
+                        IF LEFT$(L$, 3) = "IF " AND RIGHT$(L$, 5) = " THEN" THEN
+                            'new if level...
+                            currentIfLevel = currentIfLevel + 1
+                            db_echo "New IF line:" + STR$(currentLine)
+                            db_echo "New IF level:" + STR$(currentIfLevel)
+                            _CONTINUE
+                        END IF
+                        IF L$ = "END IF" OR L$ = "ENDIF" THEN
+                            IF currentIfLevel = j THEN
+                                db_echo "Proper END IF found:" + STR$(currentLine)
+                                EXIT DO
+                            ELSE
+                                currentIfLevel = currentIfLevel - 1
+                                db_echo "Inner END IF found; level:" + STR$(currentIfLevel)
+                            END IF
+                        END IF
                         IF LEFT$(L$, 7) = "ELSEIF " THEN
-                            IF RIGHT$(L$, 5) = " THEN" THEN
+                            IF RIGHT$(L$, 5) = " THEN" AND currentIfLevel = j THEN
+                                db_echo "ELSEIF found; same level:" + STR$(currentIfLevel)
                                 L$ = MID$(L$, 5)
                                 L1$ = MID$(L1$, 5)
                                 GOTO checkBlockCondition
-                            ELSE
+                            ELSEIF currentIfLevel = j THEN
                                 PRINT "Expected ELSEIF condition THEN on line"; currentLine: running = false: GOTO Parse.Done
                             END IF
                         END IF
-                        IF L$ = "ELSE" THEN EXIT DO
-                        IF LEFT$(L$, 5) = "ELSE " THEN
+                        IF L$ = "ELSE" AND currentIfLevel = j THEN
+                            db_echo "ELSE block found; same level:" + STR$(currentIfLevel)
+                            EXIT DO
+                        END IF
+                        IF LEFT$(L$, 5) = "ELSE " AND currentIfLevel = j THEN
+                            db_echo "ELSE line found; same level:" + STR$(currentIfLevel)
                             L$ = MID$(L$, 6)
                             L1$ = MID$(L1$, 6)
                             GOTO redoThisLine
                         END IF
                     LOOP
-                ELSE
-                    ifBlock = 1 'if block evaluated as true
                 END IF
             ELSE
                 'single-line IF statement
@@ -997,6 +1021,7 @@ DO
     Parse.Done:
     IF LEN(Ucontinuation$) THEN L$ = Ucontinuation$: L1$ = continuation$: GOTO redoThisLine
     IF externalLimit > 0 AND running THEN _LIMIT externalLimit
+    IF currentIfLevel < 0 THEN currentIfLevel = 0
 LOOP
 
 'oops:
