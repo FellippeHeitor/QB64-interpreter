@@ -680,6 +680,8 @@ DO
             END IF
         ELSEIF L$ = "SYSTEM" OR L$ = "EXIT" THEN
             SYSTEM
+        ELSEIF L$ = "STOP" THEN
+            running = false
         ELSEIF L$ = "END" THEN
             IF running THEN running = false
         ELSEIF LEFT$(L$, 6) = "INPUT " THEN
@@ -817,7 +819,10 @@ DO
                         L1$ = program(currentLine)
                         L1$ = LTRIM$(RTRIM$(L1$))
                         L$ = UCASE$(L1$)
-                        IF L$ = "LOOP" THEN currentDoLevel = currentDoLevel - 1: EXIT DO
+                        IF L$ = "LOOP" OR LEFT$(L$, 11) = "LOOP UNTIL " OR LEFT$(L$, 11) = "LOOP WHILE " THEN
+                            currentDoLevel = currentDoLevel - 1
+                            EXIT DO
+                        END IF
                     LOOP
                 END IF
             ELSE
@@ -1637,7 +1642,13 @@ FUNCTION Parse$ (__inputExpr AS STRING)
     REDIM oe(0) AS LONG
     REDIM strs(0) AS STRING
 
-    'db_echo "------------------ Parsing: " + __inputExpr
+    db_echo "------------------ Parsing: " + __inputExpr
+
+    IF LEFT$(__inputExpr, 1) = CHR$(34) AND INSTR(2, __inputExpr, CHR$(34)) = LEN(__inputExpr) THEN
+        'string literal
+        Parse$ = removeQuote(__inputExpr)
+        EXIT FUNCTION
+    END IF
 
     inputExpr = "(" + __inputExpr + ")"
 
@@ -1759,7 +1770,7 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
         NEXT
     END IF
 
-    'db_echo "* Entering Compute##(): " + expr
+    db_echo "* Entering Compute##(): " + expr
 
     'break down expr into element()
     FOR i = 1 TO LEN(expr)
@@ -1791,9 +1802,9 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                 el$ = el$ + element(l)
             END IF
         NEXT
-        'db_echo "** Total elements:" + STR$(tempElCount) + " **"
-        'db_echo el$
-        'db_echo "     ***"
+        db_echo "** Total elements:" + STR$(tempElCount) + " **"
+        db_echo el$
+        db_echo "     ***"
     END IF
 
     FOR i = 1 TO LEN(validOP$)
@@ -1813,7 +1824,7 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                     op1## = GetVal(element(j - l), getvalTxtRet1, getvalTxtResult1)
                     IF getvalTxtRet1 THEN txtop1$ = getvalTxtResult1
                 END IF
-                'db_echo "element(j - l) = " + element(j - l)
+                db_echo "element(j - l) = " + element(j - l)
                 m = 1
                 IF j + m <= totalElements THEN
                     DO UNTIL LEN(_TRIM$(element(j + m))) > 0 AND INSTR(validOP$, element(j + m)) = 0
@@ -1827,9 +1838,9 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                     op2## = GetVal(element(j + m), getvalTxtRet2, getvalTxtResult2)
                     IF getvalTxtRet2 THEN txtop2$ = getvalTxtResult2
                 END IF
-                'db_echo "element(j + m) = " + element(j + m)
-                'db_echo "op1=" + STR$(op1##) + "; oper=" + op(i) + "; op2=" + STR$(op2##)
-                'db_echo "txtop1=" + txtop1$ + "; oper=" + op(i) + "; txtop2=" + txtop2$
+                db_echo "element(j + m) = " + element(j + m)
+                db_echo "op1=" + STR$(op1##) + "; oper=" + op(i) + "; op2=" + STR$(op2##)
+                db_echo "txtop1=" + txtop1$ + "; oper=" + op(i) + "; txtop2=" + txtop2$
                 SELECT CASE op(i)
                     CASE "^"
                         IF getvalTxtRet1 OR getvalTxtRet2 THEN throwError 13: EXIT FUNCTION
@@ -1888,8 +1899,8 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                             throwError 13: EXIT FUNCTION
                         END IF
                 END SELECT
-                'db_echo "temp result## =" + STR$(result##)
-                'db_echo "temp txtresult$ =" + txtresult$
+                db_echo "temp result## =" + STR$(result##)
+                db_echo "temp txtresult$ =" + txtresult$
                 element(j - l) = ""
                 element(j + m) = ""
                 IF foundAsText THEN
@@ -1907,9 +1918,9 @@ FUNCTION Compute## (expr AS STRING, foundAsText AS _BYTE, textReturn$)
                             el$ = el$ + element(l)
                         END IF
                     NEXT
-                    'db_echo "** Total elements:" + STR$(tempElCount) + " **"
-                    'db_echo el$
-                    'db_echo "     ***"
+                    db_echo "** Total elements:" + STR$(tempElCount) + " **"
+                    db_echo el$
+                    db_echo "     ***"
                 END IF
             END IF
         NEXT
