@@ -418,7 +418,7 @@ DO
                     PRINT "No program loaded."
                 END IF
             END IF
-        ELSEIF L$ = "LIST VARIABLES" THEN
+        ELSEIF L$ = "LIST VARIABLES" OR L$ = "LIST VAR" THEN
             IF NOT running THEN
                 j = 0
                 'db_echo "Listing variables"
