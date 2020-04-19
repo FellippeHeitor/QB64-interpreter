@@ -35,6 +35,16 @@ TYPE levelControlType
     '    0 = no condition; 1 = DO + condition; 2 = LOOP + condition
 END TYPE
 
+TYPE forControlType
+    varName AS STRING
+    varIndex AS LONG
+    initial AS _FLOAT
+    final AS _FLOAT
+    theStep AS _FLOAT
+    level AS levelControlType
+    firstRun AS _BYTE
+END TYPE
+
 CONST varType_FLOAT = 0
 CONST varTypeSTRING = 1
 CONST varTypeINTEGER = 2
@@ -55,10 +65,11 @@ REDIM SHARED nums(0) AS _FLOAT
 REDIM SHARED program(0) AS STRING
 DIM SHARED totalVars AS LONG, varType_DEFAULT AS _BYTE
 DIM SHARED thisScope$, currentLine AS LONG, lineThatErrored AS LONG
-DIM varIndex AS LONG, i AS LONG, j AS LONG
+DIM varIndex AS LONG, i AS LONG, j AS LONG, l AS LONG
 DIM continuation$, Ucontinuation$
 DIM loopControl(100) AS levelControlType
-DIM currentDoLevel AS INTEGER, currentIfLevel AS INTEGER
+DIM forControl(100) AS forControlType
+DIM currentDoLevel AS INTEGER, currentIfLevel AS INTEGER, currentForLevel AS INTEGER
 DIM SHARED errorHappened AS _BYTE
 DIM SHARED keyhit AS LONG
 DIM externalLimit AS INTEGER
@@ -701,10 +712,138 @@ DO
                         nums(varIndex) = d##
                 END SELECT
             END IF
+        ELSEIF LEFT$(L$, 4) = "FOR " THEN
+            IF NOT running THEN
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            ELSE
+                i = Find(1, L$, "=")
+                j = Find(i + 1, L$, " TO ")
+                l = Find(j + 4, L$, " STEP ")
+                IF i = 0 OR j = 0 THEN
+                    PRINT "Expected FOR variable = lower TO upper on line"; currentLine
+                    running = false
+                    GOTO Parse.Done
+                ELSE
+                    currentForLevel = currentForLevel + 1
+                    IF forControl(currentForLevel).level.firstLine <> currentLine THEN
+                        forControl(currentForLevel).level.firstLine = currentLine
+                        forControl(currentForLevel).level.lastLine = 0
+                        forControl(currentForLevel).varIndex = 0
+                    END IF
+
+                    forControl(currentForLevel).firstRun = true
+                    forControl(currentForLevel).varName = _TRIM$(MID$(L1$, 5, i - 5))
+                    forControl(currentForLevel).initial = VAL(Parse$(MID$(L1$, i + 1, j - i - 1)))
+                    IF l THEN
+                        forControl(currentForLevel).final = VAL(Parse$(MID$(L1$, j + 4, l - j - 4)))
+                        forControl(currentForLevel).theStep = VAL(Parse$(MID$(L1$, l + 6)))
+                    ELSE
+                        forControl(currentForLevel).final = VAL(Parse$(MID$(L1$, j + 4)))
+                        forControl(currentForLevel).theStep = 1
+                    END IF
+
+                    L1$ = forControl(currentForLevel).varName + "=" + STR$(forControl(currentForLevel).initial) + ": NEXT"
+                    L$ = UCASE$(L1$)
+                    GOTO redoThisLine
+                END IF
+            END IF
+        ELSEIF L$ = "NEXT" THEN
+            IF running THEN
+                IF currentForLevel = 0 THEN
+                    running = false
+                    PRINT "NEXT without FOR on line"; currentLine
+                    GOTO Parse.Done
+                ELSE
+                    IF forControl(currentForLevel).varIndex = 0 THEN
+                        forControl(currentForLevel).varIndex = addVar(varName$) 'acquire var index
+                    END IF
+
+                    varIndex = forControl(currentForLevel).varIndex
+
+                    IF forControl(currentForLevel).firstRun THEN
+                        forControl(currentForLevel).firstRun = false
+                    ELSE
+                        forControl(currentForLevel).level.lastLine = currentLine
+                        IF vars(varIndex).type = varTypeINTEGER THEN
+                            nums(varIndex) = INT(nums(varIndex) + forControl(currentForLevel).theStep)
+                        ELSE
+                            nums(varIndex) = nums(varIndex) + forControl(currentForLevel).theStep
+                        END IF
+                    END IF
+
+                    IF forControl(currentForLevel).theStep < 0 THEN
+                        IF nums(varIndex) >= forControl(currentForLevel).final THEN
+                            currentLine = forControl(currentForLevel).level.firstLine
+                        ELSE
+                            currentForLevel = currentForLevel - 1
+                        END IF
+                    ELSE
+                        IF nums(varIndex) <= forControl(currentForLevel).final THEN
+                            currentLine = forControl(currentForLevel).level.firstLine
+                        ELSE
+                            currentForLevel = currentForLevel - 1
+                        END IF
+                    END IF
+                END IF
+            ELSE
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
+        ELSEIF LEFT$(L$, 5) = "NEXT " THEN
+            IF running THEN
+                IF currentForLevel = 0 THEN
+                    running = false
+                    PRINT "NEXT without FOR on line"; currentLine
+                    GOTO Parse.Done
+                ELSE
+                    forControl(currentForLevel).level.lastLine = currentLine
+                END IF
+            ELSE
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
+        ELSEIF L$ = "EXIT FOR" THEN
+            IF running THEN
+                IF currentForLevel = 0 THEN
+                    running = false
+                    PRINT "EXIT FOR without FOR on line"; currentLine
+                    GOTO Parse.Done
+                ELSE
+                    IF forControl(currentForLevel).level.lastLine > 0 THEN
+                        currentLine = forControl(currentForLevel).level.lastLine
+                        currentForLevel = currentForLevel - 1
+                    ELSE
+                        DO
+                            currentLine = currentLine + 1
+                            IF currentLine > UBOUND(program) THEN PRINT "FOR without NEXT on line"; forControl(currentForLevel).level.firstLine: running = false: GOTO Parse.Done
+                            L1$ = program(currentLine)
+                            L1$ = LTRIM$(RTRIM$(L1$))
+                            L$ = UCASE$(L1$)
+                            IF L$ = "NEXT" OR LEFT$(L$, 5) = "NEXT " THEN
+                                currentForLevel = currentForLevel - 1
+                                EXIT DO
+                            END IF
+                        LOOP
+                    END IF
+                END IF
+            ELSE
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
+        ELSEIF L$ = "_CONTINUE" THEN
+            IF running THEN
+            ELSE
+                PRINT "Not valid in immediate mode."
+                GOTO Parse.Done
+            END IF
         ELSEIF L$ = "DO" THEN
             IF running THEN
                 currentDoLevel = currentDoLevel + 1
-                loopControl(currentDoLevel).firstLine = currentLine
+                IF loopControl(currentDoLevel).firstLine <> currentLine THEN
+                    loopControl(currentDoLevel).firstLine = currentLine
+                    loopControl(currentDoLevel).lastLine = 0
+                END IF
                 loopControl(currentDoLevel).condition = 0
             ELSE
                 PRINT "Not valid in immediate mode."
@@ -713,7 +852,10 @@ DO
         ELSEIF LEFT$(L$, 9) = "DO UNTIL " THEN
             IF running THEN
                 currentDoLevel = currentDoLevel + 1
-                loopControl(currentDoLevel).firstLine = currentLine
+                IF loopControl(currentDoLevel).firstLine <> currentLine THEN
+                    loopControl(currentDoLevel).firstLine = currentLine
+                    loopControl(currentDoLevel).lastLine = 0
+                END IF
                 loopControl(currentDoLevel).condition = 1
                 IF VAL(Parse$(MID$(L$, 10))) <> 0 THEN
                     GOTO treatAsExitDo
@@ -725,7 +867,10 @@ DO
         ELSEIF LEFT$(L$, 9) = "DO WHILE " THEN
             IF running THEN
                 currentDoLevel = currentDoLevel + 1
-                loopControl(currentDoLevel).firstLine = currentLine
+                IF loopControl(currentDoLevel).firstLine <> currentLine THEN
+                    loopControl(currentDoLevel).firstLine = currentLine
+                    loopControl(currentDoLevel).lastLine = 0
+                END IF
                 loopControl(currentDoLevel).condition = 1
                 IF VAL(Parse$(MID$(L$, 10))) = 0 THEN
                     GOTO treatAsExitDo
