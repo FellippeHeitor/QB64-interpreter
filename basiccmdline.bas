@@ -161,7 +161,7 @@ DO
 
     IF NOT running THEN _AUTODISPLAY: LINE INPUT "."; L1$
 
-    L1$ = LTRIM$(RTRIM$(L1$))
+    L1$ = TrimSpaceTab$(L1$)
     L$ = UCASE$(L1$)
 
     redoThisLine:
@@ -2208,3 +2208,28 @@ FUNCTION Find& (start AS LONG, text$, subtext$)
 
     Find& = p
 END FUNCTION
+
+FUNCTION TrimSpaceTab$ (s AS STRING)
+    'Removes trailing and starting SPACES and TABS
+    STATIC o AS _OFFSET, o2 AS _OFFSET, m AS _MEM
+    STATIC ref(1) AS _UNSIGNED LONG
+    IF LEN(s) = 0 THEN EXIT FUNCTION
+    o = _OFFSET(s): o2 = o + LEN(s)
+    ref(0) = 0: ref(1) = LEN(s)
+	DIM c AS _UNSIGNED _BYTE
+    $CHECKING:OFF
+    DO
+        c = _MEMGET(m, o, _UNSIGNED _BYTE)
+        IF c <> 9 AND c <> 32 THEN EXIT DO
+        o = o + 1: ref(0) = ref(0) + 1
+    LOOP UNTIL o = o2
+    o = _OFFSET(s): o2 = o2 - 1
+    DO
+        c = _MEMGET(m, o2, _UNSIGNED _BYTE)
+        IF c <> 9 AND c <> 32 THEN EXIT DO
+        o2 = o2 - 1: ref(1) = ref(1) - 1
+    LOOP UNTIL o2 = o - 1
+    $CHECKING:ON
+    TrimSpaceTab$ = MID$(s, ref(0) + 1, ref(1) - ref(0))
+END FUNCTION
+
