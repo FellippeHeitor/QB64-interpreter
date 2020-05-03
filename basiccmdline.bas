@@ -29,6 +29,7 @@ END TYPE
 
 TYPE levelControlType
     firstLine AS LONG
+    continueAt AS LONG
     lastLine AS LONG
     condition AS _BYTE
     'For DO/LOOP blocks:
@@ -66,7 +67,7 @@ REDIM SHARED program(0) AS STRING
 DIM SHARED totalVars AS LONG, varType_DEFAULT AS _BYTE
 DIM SHARED thisScope$, currentLine AS LONG, lineThatErrored AS LONG
 DIM varIndex AS LONG, i AS LONG, j AS LONG, l AS LONG
-DIM continuation$, Ucontinuation$
+DIM continuation$, Ucontinuation$, continueAt AS LONG
 DIM loopControl(100) AS levelControlType
 DIM forControl(100) AS forControlType
 DIM currentDoLevel AS INTEGER, currentIfLevel AS INTEGER, currentForLevel AS INTEGER
@@ -193,22 +194,26 @@ DO
                 Ucontinuation$ = _TRIM$(MID$(L$, j + 1))
                 L1$ = _TRIM$(LEFT$(L1$, j - 1))
                 L$ = _TRIM$(LEFT$(L$, j - 1))
+                continueAt = _INSTRREV(program(currentLine), continuation$)
             ELSEIF j = LEN(L$) THEN
                 IF INSTR(L$, " ") > 0 THEN
                     L$ = LEFT$(L$, LEN(L$) - 1)
                     L1$ = LEFT$(L1$, LEN(L1$) - 1)
                     continuation$ = ""
                     Ucontinuation$ = ""
+                    continueAt = 0
                 ELSE
                     'likely a label, leave it as is
                 END IF
             ELSE
                 continuation$ = ""
                 Ucontinuation$ = ""
+                continueAt = 0
             END IF
         ELSE
             continuation$ = ""
             Ucontinuation$ = ""
+            continueAt = 0
         END IF
 
         IF LEFT$(L$, 5) = "LOAD " THEN
@@ -728,6 +733,7 @@ DO
                     currentForLevel = currentForLevel + 1
                     IF forControl(currentForLevel).level.firstLine <> currentLine THEN
                         forControl(currentForLevel).level.firstLine = currentLine
+                        forControl(currentForLevel).level.continueAt = continueAt
                         forControl(currentForLevel).level.lastLine = 0
                         forControl(currentForLevel).varIndex = 0
                     END IF
@@ -755,6 +761,7 @@ DO
                     PRINT "NEXT without FOR on line"; currentLine
                     GOTO Parse.Done
                 ELSE
+                    treatAsNext:
                     IF forControl(currentForLevel).varIndex = 0 THEN
                         forControl(currentForLevel).varIndex = addVar(forControl(currentForLevel).varName) 'acquire var index
                     END IF
@@ -779,6 +786,13 @@ DO
                             currentLine = forControl(currentForLevel).level.firstLine
                             continuation$ = ""
                             Ucontinuation$ = ""
+                            IF forControl(currentForLevel).level.continueAt > 0 THEN
+                                continuation$ = ""
+                                Ucontinuation$ = ""
+                                L1$ = MID$(program(currentLine), forControl(currentForLevel).level.continueAt)
+                                L$ = UCASE$(L1$)
+                                GOTO redoThisLine
+                            END IF
                         END IF
                     ELSE
                         IF nums(varIndex) > forControl(currentForLevel).final THEN
@@ -787,6 +801,11 @@ DO
                             currentLine = forControl(currentForLevel).level.firstLine
                             continuation$ = ""
                             Ucontinuation$ = ""
+                            IF forControl(currentForLevel).level.continueAt > 0 THEN
+                                L1$ = MID$(program(currentLine), forControl(currentForLevel).level.continueAt)
+                                L$ = UCASE$(L1$)
+                                GOTO redoThisLine
+                            END IF
                         END IF
                     END IF
                 END IF
@@ -801,7 +820,13 @@ DO
                     PRINT "NEXT without FOR on line"; currentLine
                     GOTO Parse.Done
                 ELSE
-                    forControl(currentForLevel).level.lastLine = currentLine
+                    IF _TRIM$(MID$(L1$, 6)) <> forControl(currentForLevel).varName THEN
+                        running = false
+                        PRINT "Incorrect variable after NEXT on line"; currentLine
+                        GOTO Parse.Done
+                    ELSE
+                        GOTO treatAsNext
+                    END IF
                 END IF
             ELSE
                 PRINT "Not valid in immediate mode."
@@ -848,6 +873,7 @@ DO
                 IF loopControl(currentDoLevel).firstLine <> currentLine THEN
                     loopControl(currentDoLevel).firstLine = currentLine
                     loopControl(currentDoLevel).lastLine = 0
+                    loopControl(currentDoLevel).continueAt = continueAt
                 END IF
                 loopControl(currentDoLevel).condition = 0
             ELSE
@@ -860,6 +886,7 @@ DO
                 IF loopControl(currentDoLevel).firstLine <> currentLine THEN
                     loopControl(currentDoLevel).firstLine = currentLine
                     loopControl(currentDoLevel).lastLine = 0
+                    loopControl(currentDoLevel).continueAt = continueAt
                 END IF
                 loopControl(currentDoLevel).condition = 1
                 IF VAL(Parse$(MID$(L$, 10))) <> 0 THEN
@@ -875,6 +902,7 @@ DO
                 IF loopControl(currentDoLevel).firstLine <> currentLine THEN
                     loopControl(currentDoLevel).firstLine = currentLine
                     loopControl(currentDoLevel).lastLine = 0
+                    loopControl(currentDoLevel).continueAt = continueAt
                 END IF
                 loopControl(currentDoLevel).condition = 1
                 IF VAL(Parse$(MID$(L$, 10))) = 0 THEN
@@ -909,6 +937,11 @@ DO
                 IF currentDoLevel > 0 AND loopControl(currentDoLevel).firstLine > 0 THEN
                     currentLine = loopControl(currentDoLevel).firstLine - 1
                     currentDoLevel = currentDoLevel - 1
+                    IF loopControl(currentDoLevel).continueAt > 0 THEN
+                        L1$ = MID$(program(currentLine), loopControl(currentDoLevel).continueAt)
+                        L$ = UCASE$(L1$)
+                        GOTO redoThisLine
+                    END IF
                 ELSE
                     IF currentDoLevel = 0 THEN
                         'scan backwards until a DO is found
@@ -981,6 +1014,19 @@ DO
             END IF
         ELSEIF LEFT$(L$, 7) = "SCREEN " THEN
             SCREEN VAL(Parse$(MID$(L$, 8)))
+        ELSEIF LEFT$(L$, 12) = "_SCREENMOVE " THEN
+            c$ = MID$(L$, 13)
+            IF INSTR(c$, ",") THEN
+                c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
+                c2$ = MID$(c$, INSTR(c$, ",") + 1)
+                IF LEN(c1$) > 0 AND LEN(c2$) > 0 THEN
+                    _SCREENMOVE VAL(Parse(c1$)), VAL(Parse(c2$))
+                ELSE
+                    GOTO syntaxerror
+                END IF
+            ELSE
+                GOTO syntaxerror
+            END IF
         ELSEIF L$ = "ELSE" OR LEFT$(L$, 7) = "ELSEIF " THEN
             IF running THEN
                 'skip "ELSE"/"ELSEIF" block (should have already been skipped in the IF evaluation)
