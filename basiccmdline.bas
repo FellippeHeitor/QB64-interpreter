@@ -756,7 +756,7 @@ DO
                     GOTO Parse.Done
                 ELSE
                     IF forControl(currentForLevel).varIndex = 0 THEN
-                        forControl(currentForLevel).varIndex = addVar(varName$) 'acquire var index
+                        forControl(currentForLevel).varIndex = addVar(forControl(currentForLevel).varName) 'acquire var index
                     END IF
 
                     varIndex = forControl(currentForLevel).varIndex
@@ -773,16 +773,20 @@ DO
                     END IF
 
                     IF forControl(currentForLevel).theStep < 0 THEN
-                        IF nums(varIndex) >= forControl(currentForLevel).final THEN
-                            currentLine = forControl(currentForLevel).level.firstLine
+                        IF nums(varIndex) < forControl(currentForLevel).final THEN
+                            GOTO treatAsExitFor
                         ELSE
-                            currentForLevel = currentForLevel - 1
+                            currentLine = forControl(currentForLevel).level.firstLine
+                            continuation$ = ""
+                            Ucontinuation$ = ""
                         END IF
                     ELSE
-                        IF nums(varIndex) <= forControl(currentForLevel).final THEN
-                            currentLine = forControl(currentForLevel).level.firstLine
+                        IF nums(varIndex) > forControl(currentForLevel).final THEN
+                            GOTO treatAsExitFor
                         ELSE
-                            currentForLevel = currentForLevel - 1
+                            currentLine = forControl(currentForLevel).level.firstLine
+                            continuation$ = ""
+                            Ucontinuation$ = ""
                         END IF
                     END IF
                 END IF
@@ -810,6 +814,7 @@ DO
                     PRINT "EXIT FOR without FOR on line"; currentLine
                     GOTO Parse.Done
                 ELSE
+                    treatAsExitFor:
                     IF forControl(currentForLevel).level.lastLine > 0 THEN
                         currentLine = forControl(currentForLevel).level.lastLine
                         currentForLevel = currentForLevel - 1
