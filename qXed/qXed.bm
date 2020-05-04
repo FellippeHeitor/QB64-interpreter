@@ -1,0 +1,1066 @@
+'adapted from https://www.qb64.org/forum/index.php?topic=1642.msg108603#msg108603
+'by STxAxTIC
+
+SUB Editor
+    'adapted from https://www.qb64.org/forum/index.php?topic=1642.msg108603#msg108603
+    'by STxAxTIC
+    DIM scrHand&
+    DIM prevScreen AS LONG
+
+    prevScreen = _COPYIMAGE(0)
+    scrHand& = _NEWIMAGE(WindowWidth, WindowHeight, 0)
+    KEY OFF
+    SCREEN scrHand&
+
+    DIM pathSep$
+    $IF WIN THEN
+        pathSep$ = "\"
+    $ELSE
+        pathSep$ = "/"
+    $END IF
+
+    DIM prevTitle$, t$
+    prevTitle$ = _TITLE$
+
+    t$ = MID$(loadedFile$, _INSTRREV(loadedfile$, pathSep$) + 1)
+    IF LEN(t$) THEN
+        _TITLE "qXed" + " (" + t$ + ")"
+    ELSE
+        _TITLE "qXed" + " (Untitled)"
+    END IF
+
+    ' Create character list.
+    CALL Assimilate(loadedFileContents$)
+
+    ' Prime main loop.
+    CALL MapText
+    CALL CalibrateCursor(ID1)
+    CALL CalibrateCursor(ID2)
+    CALL PrintEverything
+
+    ExitEditor = false
+
+    ' Main loop.
+    DO
+        IF (StateChange = 1) THEN
+            CALL PrintEverything
+        END IF
+
+        'IF _RESIZE = -1 THEN
+        '    _DELAY .1
+        '    oldimage& = scrHand&
+        '    scrHand& = _NEWIMAGE(_RESIZEWIDTH / 8, _RESIZEHEIGHT / 16, 0)
+        '    SCREEN scrHand&
+        '    _FREEIMAGE oldimage&
+        '    WindowWidth = INT(_RESIZEWIDTH / 8)
+        '    WindowHeight = INT(_RESIZEHEIGHT / 16)
+        '    TextHeight = WindowHeight - 2 * TopIndent
+        '    TextWidth = WindowWidth - 2 * LeftIndent
+        '    REDIM LineAsMapped(TextHeight)
+        '    REDIM AuxGrid(TextWidth, TextHeight, 2)
+        '    CALL MapText
+        '    CALL CalibrateCursor(ID1)
+        '    CALL CalibrateCursor(ID2)
+        '    CALL PrintEverything
+        'END IF
+
+        _DISPLAY
+        _LIMIT 120
+    LOOP UNTIL ExitEditor
+
+    SCREEN prevScreen
+    IF screenKeyStatus THEN KEY ON
+    _TITLE prevTitle$
+    _FREEIMAGE scrHand&
+END SUB
+
+SUB PrintEverything
+    DIM c$, j AS LONG, d$, p AS LONG, q AS LONG, r AS SINGLE
+    DIM a$, p1 AS LONG, p2 AS LONG, pe AS LONG
+    DIM a AS LONG, b AS LONG, e$, g$
+
+    CLS
+
+    ' Main text
+    DIM i AS LONG
+    FOR i = 1 TO VisibleLines
+        c$ = LineAsMapped(i)
+        'IF ((TextFormatting = 1) AND (TextWrapping <> 2)) THEN
+        IF (TextFormatting = 1) THEN
+            FOR j = 1 TO TextWidth - LEN(c$)
+                c$ = c$ + " "
+            NEXT
+        END IF
+        d$ = MID$(c$, HScroll, TextWidth)
+        CALL DisplayText(LeftIndent + 1, TopIndent + i, 7, 1, d$)
+    NEXT
+
+    ' Horizontal scrollbar
+    p = LinearCount(NthP(StartIndex, FindID(LeftIndent + 1, Cursor1.Y)), ID1)
+    q = LEN(LineAsMapped(Cursor1.Y - TopIndent))
+    r = p / (q + 1)
+    IF r > 1 THEN r = 1
+    IF r < 0 THEN r = 0
+    i = 2 + INT(r * (WindowWidth - 1))
+    IF i < 1 THEN i = 1
+    IF i >= WindowWidth THEN i = WindowWidth
+    CALL DisplayText(i, WindowHeight - 1, 8, 7, "^")
+
+    ' Vertical scrollbar
+    p = LinearCount(ID1, NthP(ID1, ChainLimit + 1))
+    q = LinearCount(NthL(ID1, ChainLimit + 1), NthP(ID1, ChainLimit + 1))
+    IF (q = 0) THEN r = 1 ELSE r = 1 - p / q
+    CALL DisplayText(WindowWidth, 1 + INT(r * (WindowHeight - 1)), 8, 7, "<")
+
+    ' Mouse pointer
+    IF ((_MOUSEX >= 1) AND (_MOUSEX <= WindowWidth) AND (_MOUSEY >= 1) AND (_MOUSEY <= WindowHeight)) THEN
+        a$ = CHR$(SCREEN(_MOUSEY, _MOUSEX))
+        CALL DisplayText(_MOUSEX, _MOUSEY, 0, 15, a$)
+    END IF
+
+    ' Cursor2
+    IF ((Cursor2.X > 0 AND Cursor2.X < WindowWidth) AND ((Cursor2.Y > 0) AND (Cursor2.Y < WindowHeight))) THEN
+        p1 = LinearCount(StartIndex, ID1)
+        p2 = LinearCount(StartIndex, ID2)
+        pe = LinearCount(StartIndex, EOC)
+        IF ((p2 > p1) AND (p2 < pe)) THEN
+            c$ = TheChain(ID2).Content
+            IF (c$ = " ") THEN c$ = "_"
+            IF (c$ = chr$(10)) THEN c$ = CHR$(20)
+            CALL DisplayText(Cursor2.X, Cursor2.Y, 0, 6, c$)
+        END IF
+    END IF
+
+    ' Cursor1
+    IF ((Cursor1.X > 0 AND Cursor1.X < WindowWidth) AND ((Cursor1.Y > 0) AND (Cursor1.Y < WindowHeight))) THEN
+        c$ = TheChain(ID1).Content
+        IF (c$ = " ") THEN c$ = "_"
+        IF (c$ = chr$(10)) THEN c$ = CHR$(20)
+        IF ((Cursor1.X = Cursor2.X) AND (Cursor1.Y = Cursor2.Y)) THEN
+            a = 16: b = 5
+        ELSE
+            a = 16: b = 3
+        END IF
+        CALL DisplayText(Cursor1.X, Cursor1.Y, a, b, c$)
+    END IF
+
+    ' Guide
+    SELECT CASE TextWrapping
+        CASE 0: d$ = "Square"
+        CASE 1: d$ = "Fluid"
+        CASE 2: d$ = "None"
+    END SELECT
+    c$ = "[F6=Confirm edits] [F7=Cancel edits]" ' [F11=Format] [F12=Wrap: " + d$ + "]"
+    'IF (TextWrapping = 2) THEN c$ = "[F1/2=HScroll] " + c$
+    c$ = c$ + STR$(INT(100 * r)) + "%"
+    IF (LEN(c$) >= TextWidth) THEN c$ = LEFT$(c$, TextWidth)
+    CALL DisplayText(WindowWidth - LEN(c$), 1, 15, 0, c$)
+    c$ = "[Esc=Mode] [M1=Cur1] [M2=Cur2] [Del=Erase Cur1-2]"
+    IF (InsertKey = 1) THEN c$ = "[Ins] " + c$
+    IF (LEN(c$) >= TextWidth) THEN c$ = LEFT$(c$, TextWidth)
+    CALL DisplayText(WindowWidth - LEN(c$), WindowHeight, 15, 0, c$)
+
+    ' Cursor status
+    d$ = TheChain(ID1).Content
+    e$ = TheChain(ID2).Content
+    IF ((ASC(d$) = 10) OR (ASC(d$) = 13)) THEN d$ = CHR$(20)
+    IF ((ASC(e$) = 10) OR (ASC(e$) = 13)) THEN e$ = CHR$(20)
+    IF (ASC(d$) = 32) THEN d$ = "_"
+    IF (ASC(e$) = 32) THEN e$ = "_"
+
+    c$ = "(" + LTRIM$(RTRIM$(STR$(Cursor1.X - LeftIndent))) + "," + LTRIM$(RTRIM$(STR$(Cursor1.Y - TopIndent))) + ")" ':" + " " + LTRIM$(RTRIM$(d$)) + " " + LTRIM$(RTRIM$(STR$(ID1))) + ")"
+    IF ((Cursor1.X = Cursor2.X) AND (Cursor1.Y = Cursor2.Y)) THEN
+        CALL DisplayText(2, WindowHeight, 15, 5, c$)
+        CALL DisplayText(3 + LEN(c$) + LEN(g$), WindowHeight, 15, 5, "<" + CHR$(177))
+    ELSE
+        CALL DisplayText(2, WindowHeight, 0, 3, c$)
+        CALL DisplayText(3 + LEN(c$) + LEN(g$), WindowHeight, 0, 3, CHR$(177) + ">")
+    END IF
+    IF (LinearCount(StartIndex, ID2) > LinearCount(StartIndex, ID1)) THEN
+        g$ = "(" + LTRIM$(RTRIM$(STR$(Cursor2.X - LeftIndent))) + "," + LTRIM$(RTRIM$(STR$(Cursor2.Y - TopIndent))) + ")" ':" + " " + LTRIM$(RTRIM$(e$)) + " " + LTRIM$(RTRIM$(STR$(ID2))) + ")"
+        CALL DisplayText(6 + LEN(c$), WindowHeight, 0, 6, g$)
+    END IF
+
+    DEBUG$ = STR$(ID1) + STR$(ID2)
+    c$ = "qXed" + " " + DEBUG$
+    CALL DisplayText(1, 1, 11, 0, c$)
+
+    COLOR 15, 0
+
+END SUB
+
+SUB Assimilate (a AS STRING)
+    DIM k AS LONG, PreviousIdentity AS LONG, NextIdentity AS LONG
+    DIM j AS LONG
+
+    ' Load a string to initialize chain.
+    FOR k = 1 TO ChainLimit
+        TheChain(k).Identity = 0
+    NEXT
+    StartIndex = 1
+    PreviousIdentity = BOC
+    NextIdentity = NextOpenIdentity(StartIndex)
+    FOR k = 1 TO LEN(a)
+        j = NextIdentity
+        TheChain(j).Identity = j
+        TheChain(j).Content = ReFormat$(MID$(a, k, 1))
+        TheChain(j).Lagger = PreviousIdentity
+        PreviousIdentity = j
+        IF (k < LEN(a)) THEN
+            NextIdentity = NextOpenIdentity(j)
+            TheChain(j).Pointer = NextIdentity
+        ELSE
+            TheChain(j).Pointer = EOC
+        END IF
+        PRINT TheChain(j).Content
+    NEXT
+    ID1 = StartIndex
+    ID2 = ID1 'NthP(ID1, ChainLimit + 1)
+END SUB
+
+FUNCTION ReFormat$ (a AS STRING)
+    DIM c$
+
+    c$ = a
+    'IF c$ = CHR$(13) THEN c$ = CHR$(10)
+    IF c$ = CHR$(9) THEN c$ = "    "
+    ReFormat = c$
+END FUNCTION
+
+FUNCTION NthP (a AS LONG, b AS LONG)
+    DIM i AS LONG, k AS LONG, j AS LONG
+
+    ' Returns the address that is b jumps ahead of address a.
+    i = a
+    IF (i <> EOC) THEN
+        k = 0
+        j = 0
+        DO WHILE (k < b)
+            k = k + 1
+            j = TheChain(i).Identity
+            i = TheChain(j).Pointer
+            IF (i = EOC) THEN EXIT DO
+        LOOP
+    END IF
+    NthP = j
+END FUNCTION
+
+FUNCTION NthPC (a AS LONG, b AS STRING)
+    DIM i AS LONG, j AS LONG
+
+    ' Returns the address holding b first enLinearCountered from a.
+    i = a
+    DO
+        j = TheChain(i).Identity
+        i = TheChain(j).Pointer
+        IF (TheChain(j).Content = b) THEN EXIT DO
+        IF (i = EOC) THEN
+            j = BOC
+            EXIT DO
+        END IF
+    LOOP
+    NthPC = j
+END FUNCTION
+
+FUNCTION NthL (a AS LONG, b AS LONG)
+    DIM i AS LONG, j AS LONG, k AS LONG
+    ' Returns the address that is b jumps behind address a.
+    i = a
+    k = 0
+    DO WHILE k < b
+        k = k + 1
+        j = TheChain(i).Identity
+        i = TheChain(j).Lagger
+        IF (i = BOC) THEN EXIT DO
+    LOOP
+    NthL = j
+END FUNCTION
+
+FUNCTION NextOpenIdentity (a AS LONG)
+    DIM j AS LONG
+
+    ' Returns first nonzero identity.
+    FOR j = a TO ChainLimit
+        IF (TheChain(j).Identity = 0) THEN EXIT FOR
+    NEXT
+    IF (j > ChainLimit) THEN
+        PRINT "Out of memory: "; ChainLimit
+        SLEEP
+        SYSTEM
+    END IF
+    NextOpenIdentity = j
+END FUNCTION
+
+FUNCTION BackBreak (a AS LONG)
+    DIM j AS LONG, lastbreak AS LONG, c$, k AS LONG
+    DIM d$
+
+    ' Function for scrolling up.
+    j = a
+    lastbreak = 0
+    c$ = ""
+    DO
+        IF (j = BOC) THEN EXIT DO
+        k = TheChain(j).Lagger
+        IF (k = BOC) THEN
+            lastbreak = j
+            EXIT DO
+        END IF
+        j = k
+        d$ = TheChain(j).Content
+        c$ = d$ + c$
+        IF ((TextWrapping = 1) AND (d$ = " ")) THEN lastbreak = j
+        IF (TextWrapping <> 2) AND (LEN(c$) = TextWidth) THEN EXIT DO
+        IF (d$ = chr$(10)) THEN EXIT DO
+    LOOP
+    IF (lastbreak <> 0) THEN j = TheChain(lastbreak).Identity
+    BackBreak = j
+END FUNCTION
+
+SUB InsertBefore (a AS LONG, b AS STRING)
+    DIM j AS LONG, al AS LONG
+
+    ' Inserts a single cell before address a in the chain.
+    j = NextOpenIdentity(a)
+    al = TheChain(a).Lagger
+    TheChain(j).Identity = j
+    TheChain(j).Pointer = a
+    TheChain(j).Lagger = al
+    TheChain(j).Content = ReFormat$(b)
+    TheChain(a).Lagger = j
+    IF (al = BOC) THEN StartIndex = j ELSE TheChain(al).Pointer = j
+END SUB
+
+SUB InsertAfter (a AS LONG, b AS STRING)
+    DIM j AS LONG
+    DIM ap AS LONG
+
+    ' Inserts a single cell after address a in the chain.
+    j = NextOpenIdentity(a)
+    ap = TheChain(a).Pointer
+    TheChain(j).Identity = j
+    TheChain(j).Pointer = ap
+    TheChain(j).Lagger = a
+    TheChain(j).Content = ReFormat$(b)
+    TheChain(a).Pointer = j
+    IF (ap <> EOC) THEN TheChain(ap).Lagger = j
+END SUB
+
+SUB InsertRange (a AS LONG, b AS STRING)
+    DIM k AS LONG, c$
+
+    ' Inserts a sub-chain anywhere.
+    FOR k = 1 TO LEN(b)
+        c$ = MID$(b, k, 1)
+        CALL InsertBefore(a, c$)
+    NEXT
+END SUB
+
+SUB UnlinkCell (a AS LONG)
+    DIM ap AS LONG, al AS LONG
+
+    ' Remove single cell from chain and clear identity.
+    ap = TheChain(a).Pointer
+    al = TheChain(a).Lagger
+    IF ((ap = EOC) AND (al = BOC)) THEN
+        TheChain(a).Content = CHR$(10)
+        'ID1 = a
+        'ID2 = ID1
+    ELSE
+        TheChain(a).Identity = 0
+        IF ((ap <> EOC) AND (al <> BOC)) THEN
+            TheChain(al).Pointer = ap
+            TheChain(ap).Lagger = al
+        END IF
+        IF (ap = EOC) THEN TheChain(al).Pointer = EOC
+        IF (al = BOC) THEN
+            StartIndex = ap
+            TheChain(ap).Lagger = BOC
+        END IF
+    END IF
+END SUB
+
+SUB UnlinkRange (a AS LONG, b AS LONG)
+    DIM bp AS LONG, al AS LONG
+    DIM k AS LONG
+
+    ' Remove sub-chain and clear identity of each cell.
+    bp = TheChain(b).Pointer
+    al = TheChain(a).Lagger
+    IF ((al = BOC) AND (bp = EOC)) THEN
+        CALL UnlinkRange(NthP(a, 2), b)
+        TheChain(a).Content = " "
+        TheChain(a).Pointer = bp
+    ELSE
+        k = a
+        DO WHILE ((k <> b) AND (k <> EOC))
+            TheChain(k).Identity = 0
+            k = TheChain(k).Pointer
+        LOOP
+        TheChain(b).Identity = 0
+        TheChain(bp).Lagger = al
+        IF (al = BOC) THEN StartIndex = bp ELSE TheChain(al).Pointer = bp
+    END IF
+END SUB
+
+FUNCTION LinearCount (a AS LONG, b AS LONG)
+    DIM i AS LONG, j AS LONG, k AS LONG
+
+    ' Returns number of links between two addresses.
+    i = a
+    k = 0
+    DO WHILE (i <> b)
+        k = k + 1
+        j = TheChain(i).Identity
+        i = TheChain(j).Pointer
+        IF (i = EOC) THEN EXIT DO
+    LOOP
+    LinearCount = k
+END FUNCTION
+
+FUNCTION LinearCount2 (a AS LONG, b AS LONG, c AS LONG)
+    DIM i AS LONG, j AS LONG, k AS LONG
+
+    ' Returns number of links between two addresses, with exit condition.
+    i = a
+    k = 0
+    DO WHILE (i <> b)
+        k = k + 1
+        j = TheChain(i).Identity
+        i = TheChain(j).Pointer
+        IF (i = EOC) THEN EXIT DO
+        IF (k = c) THEN EXIT DO
+    LOOP
+    LinearCount2 = k
+END FUNCTION
+
+FUNCTION Projection$ (a AS LONG, b AS LONG)
+    DIM j AS LONG, c$, k AS LONG
+
+    ' Returns the linear content for all address between a and b, inclusive.
+    DIM TheReturn AS STRING
+    TheReturn = ""
+    IF (a = b) THEN
+        TheReturn = TheChain(a).Content
+    ELSE
+        j = a
+        DO
+            c$ = TheChain(j).Content
+            TheReturn = TheReturn + c$
+            k = TheChain(j).Pointer
+            IF (j = b) THEN EXIT DO
+            IF (k = EOC) THEN EXIT DO
+            j = k
+        LOOP
+    END IF
+    Projection$ = TheReturn
+END SUB
+
+SUB MapText
+    DIM br$, i AS LONG, j AS LONG, k AS LONG
+    DIM q$, d$, r AS LONG
+    DIM k1 AS LONG, k2 AS LONG
+    DIM c1 AS LONG, c2 AS LONG
+    DIM m AS LONG, n AS LONG
+    DIM c$
+
+    'IF (TextFormatting = 1) THEN br$ = "~" ELSE
+    br$ = " "
+    j = StartIndex
+    i = 1
+    q$ = ""
+    d$ = ""
+    DO ' Begin with any left-over text from previous iteration.
+        q$ = d$
+        d$ = ""
+        r = TextWidth - LEN(q$)
+        IF (TextWrapping <> 2) THEN k1 = NthP(j, r) ELSE k1 = EOC
+        k2 = NthPC(j, chr$(10))
+        IF (TextWrapping <> 2) THEN c1 = LinearCount(j, k1) ELSE c1 = LinearCount2(j, k1, TextWidth * TextHeight)
+        c2 = LinearCount(j, k2)
+        IF (c2 = 0) THEN ' Line is blank-returned.
+            k = k2
+            q$ = q$ + br$
+            j = NthP(k, 2)
+        ELSE
+            IF (c1 = c2) THEN ' Possible end of chain.
+                k = TheChain(k1).Lagger
+                q$ = q$ + Projection$(j, k)
+                j = NthP(k, 2)
+            END IF
+            IF (c1 < c2) THEN ' Width limit case (not always maximum).
+                k = k1
+                q$ = q$ + Projection$(j, k)
+                j = NthP(k, 2)
+            END IF
+            IF (c1 > c2) THEN ' Break return somewhere in line (not first).
+                k = k2
+                q$ = q$ + Projection$(j, TheChain(k).Lagger) + br$
+                n = TheChain(k).Pointer
+                IF (n <> EOC) THEN j = n
+            END IF
+        END IF
+        IF (TextWrapping = 1) THEN ' Wrap text at first space from right, send remainder to next line.
+            IF (LEN(q$) >= TextWidth) THEN
+                FOR m = LEN(q$) TO 1 STEP -1
+                    c$ = MID$(q$, m, 1)
+                    IF (c$ = " ") OR (c$ = "-") THEN
+                        q$ = LEFT$(q$, m)
+                        EXIT FOR
+                    END IF
+                    d$ = c$ + d$
+                    IF (m = 1) THEN ' Line is too long for allowed space and contains no wrapping characters.
+                        q$ = LEFT$(q$, TextWidth)
+                        d$ = ""
+                        EXIT FOR
+                    END IF
+                NEXT
+            END IF
+        END IF
+        LineAsMapped(i) = q$
+        i = i + 1
+        IF n = EOC THEN EXIT DO
+        IF (i >= TextHeight) THEN EXIT DO
+        IF (j = k) THEN EXIT DO
+    LOOP
+    VisibleLines = i - 1
+END SUB
+
+FUNCTION StateChange
+    DIM TheReturn, MH AS LONG, MW AS LONG, MT AS LONG
+    DIM MH1 AS LONG, MH2 AS LONG
+    DIM q AS LONG, i AS LONG, j AS LONG, k AS LONG
+    DIM d AS LONG, f AS LONG, t AS LONG
+
+    MH = 0
+    MW = 0
+    MT = 0
+    DO WHILE _MOUSEINPUT
+        MH1 = _MOUSEBUTTON(1)
+        MH2 = _MOUSEBUTTON(2)
+        MW = _MOUSEWHEEL
+        IF (MW <> 0) THEN MT = MW
+    LOOP
+    MW = MT
+
+    IF (MH1 = -1) THEN
+        ' Move Cursor1 among text.
+        MH = 1
+        IF ((_MOUSEX > LeftIndent) AND (_MOUSEX < TextWidth + LeftIndent + 1) AND (_MOUSEY > TopIndent) AND (_MOUSEY < TopIndent + TextHeight)) THEN
+            Cursor1.X = _MOUSEX
+            q = LeftIndent + LEN(LineAsMapped(_MOUSEY - TopIndent)) - (HScroll - 1)
+            IF (Cursor1.X > q) THEN
+                IF (q < 0) THEN
+                    IF (LEN(LineAsMapped(_MOUSEY - TopIndent)) > TextWidth) THEN
+                        HScroll = 1 + LEN(LineAsMapped(_MOUSEY - TopIndent)) - (Cursor1.X - LeftIndent)
+                    ELSE
+                        HScroll = 1
+                        Cursor1.X = LeftIndent + LEN(LineAsMapped(_MOUSEY - TopIndent))
+                    END IF
+                ELSE
+                    Cursor1.X = q
+                END IF
+            END IF
+            Cursor1.Y = _MOUSEY
+            CALL ReassignID1
+        END IF
+        ' Move by vertical scrollbar.
+        IF (_MOUSEX = WindowWidth) THEN
+            i = NthL(ID1, ChainLimit + 1)
+            j = NthP(ID1, ChainLimit + 1)
+            IF (_MOUSEY = WindowHeight) THEN i = j
+            IF (_MOUSEY > 1) AND (_MOUSEY < WindowHeight) THEN
+                t = LinearCount(i, j)
+                f = _MOUSEY / WindowHeight
+                FOR k = 1 TO t
+                    IF (k / t >= f) THEN EXIT FOR
+                    i = TheChain(i).Pointer
+                NEXT
+            END IF
+            StartIndex = i
+            ID1 = i
+        END IF
+        ' Move by horizontal scrollbar.
+        IF (_MOUSEY = WindowHeight - 1) THEN
+            j = ID1
+            i = NthP(StartIndex, FindID(LeftIndent + 1, Cursor1.Y))
+            IF (_MOUSEX > 1) AND (_MOUSEX < WindowWidth) THEN
+                t = LEN(LineAsMapped(Cursor1.Y - TopIndent))
+                f = _MOUSEX / WindowWidth
+                FOR k = 1 TO t
+                    IF (k / t >= f) THEN EXIT FOR
+                    i = TheChain(i).Pointer
+                NEXT
+            END IF
+            ID1 = i
+            d = LinearCount(StartIndex, i) - LinearCount(StartIndex, j)
+            IF (TextWrapping = 2) THEN HScroll = HScroll + d
+            IF HScroll < 1 THEN HScroll = 1
+        END IF
+    END IF
+    IF (MH2 = -1) THEN
+        ' Move Cursor2
+        MH = 1
+        IF (_MOUSEX > LeftIndent) AND (_MOUSEX < TextWidth + LeftIndent + 1) AND (_MOUSEY > TopIndent) AND (_MOUSEY < TopIndent + TextHeight + 1) THEN
+            Cursor2.X = _MOUSEX
+            q = LeftIndent + LEN(LineAsMapped(_MOUSEY - TopIndent)) - (HScroll - 1)
+            IF (Cursor2.X > q) THEN
+                IF (q < 0) THEN
+                ELSE
+                    Cursor2.X = q
+                END IF
+            END IF
+            Cursor2.Y = _MOUSEY
+            CALL ReassignID2
+            'IF (LinearCount(StartIndex, ID2) > LinearCount(StartIndex, ID1)) THEN _CLIPBOARD$ = Projection$(ID1, ID2)
+        END IF
+    END IF
+    IF (MW = -1) THEN
+        ' Wheel up
+        MH = 1
+
+
+        'StartIndex = BackBreak(StartIndex)
+        'CALL ReassignID1
+
+        ' Borrowed from uparrow.
+        IF (Cursor1.Y > TopIndent + 1) THEN
+            Cursor1.Y = Cursor1.Y - 1
+        ELSE
+            StartIndex = BackBreak(StartIndex)
+        END IF
+        q = LeftIndent + LEN(LineAsMapped(Cursor1.Y - TopIndent)) - (HScroll - 1)
+        IF (Cursor1.X > q) THEN
+            IF (q < 0) THEN
+                IF (LEN(LineAsMapped(Cursor1.Y - TopIndent)) > TextWidth) THEN
+                    HScroll = 1 + LEN(LineAsMapped(Cursor1.Y - TopIndent)) - (Cursor1.X - LeftIndent)
+                ELSE
+                    HScroll = 1
+                    Cursor1.X = LeftIndent + LEN(LineAsMapped(Cursor1.Y - TopIndent))
+                END IF
+            ELSE
+                Cursor1.X = q
+            END IF
+        END IF
+        CALL ReassignID1
+
+
+    END IF
+    IF (MW = 1) THEN
+        ' Wheel down
+        MH = 1
+
+        'IF (VisibleLines > 1) THEN
+        '    StartIndex = NthP(StartIndex, LEN(LineAsMapped(1)) + 1)
+        '    CALL MapText
+        'END IF
+        'CALL ReassignID1
+
+        ' Borrowed from downarrow.
+        IF (Cursor1.Y = TopIndent + VisibleLines) THEN
+            IF (VisibleLines > 1) THEN
+                StartIndex = NthP(StartIndex, LEN(LineAsMapped(1)) + 1)
+                CALL MapText
+            END IF
+        ELSE
+            Cursor1.Y = Cursor1.Y + 1
+        END IF
+        q = LeftIndent + LEN(LineAsMapped(Cursor1.Y - TopIndent)) - (HScroll - 1)
+        IF (Cursor1.X > q) THEN
+            IF (q < 0) THEN
+                IF (LEN(LineAsMapped(Cursor1.Y - TopIndent)) > TextWidth) THEN
+                    HScroll = 1 + LEN(LineAsMapped(Cursor1.Y - TopIndent)) - (Cursor1.X - LeftIndent)
+                ELSE
+                    HScroll = 1
+                    Cursor1.X = LeftIndent + LEN(LineAsMapped(Cursor1.Y - TopIndent))
+                END IF
+            ELSE
+                Cursor1.X = q
+            END IF
+        END IF
+        CALL ReassignID1
+
+    END IF
+
+    DIM KH AS LONG
+    DIM r AS LONG
+
+    KH = _KEYHIT
+
+    'Ctrl+C
+    IF (KH = ASC("C") OR KH = ASC("c")) AND (_KEYDOWN(100305) OR _KEYDOWN(100306)) THEN
+        ' Paste at Cursor1 position.
+        'IF (LinearCount(StartIndex, ID2) >= LinearCount(StartIndex, ID1)) THEN
+        IF (LinearCount(StartIndex, ID2) > LinearCount(StartIndex, ID1)) THEN _CLIPBOARD$ = Projection$(ID1, ID2)
+        KH = 0
+    END IF
+
+    'Ctrl+V
+    IF (KH = ASC("V") OR KH = ASC("v")) AND (_KEYDOWN(100305) OR _KEYDOWN(100306)) THEN
+        ' Paste at Cursor1 position.
+        'IF (LinearCount(StartIndex, ID2) >= LinearCount(StartIndex, ID1)) THEN
+        CALL InsertRange(ID1, _CLIPBOARD$)
+        KH = 0
+    END IF
+
+    ' Bksp
+    IF (KH = 8) THEN
+        IF ID1 = StartIndex THEN StartIndex = BackBreak(StartIndex) 'BEEP
+        r = TheChain(ID1).Pointer
+        q = TheChain(ID1).Lagger
+        CALL UnlinkCell(ID1)
+        IF ((r = EOC) AND (q = BOC)) THEN
+            ' Never erase the last character.
+        ELSE
+            IF (q <> BOC) THEN ID1 = q ELSE ID1 = r
+            IF (r = EOC) THEN ID2 = ID1
+        END IF
+    END IF
+    ' Tab
+    IF (KH = 9) THEN CALL InsertRange(ID1, "    ")
+    ' Esc
+    IF (KH = 27) THEN
+        IF (ID1 = StartIndex) AND (ID2 = StartIndex) THEN
+            ID2 = TheChain(ID1).Pointer
+        ELSE
+            IF (ID2 <> ID1) THEN ID2 = ID1 ELSE ID2 = StartIndex
+        END IF
+    END IF
+    ' Enter, Alphanumerics
+    IF (KH = 13) OR ((KH >= 32) AND (KH <= 126)) THEN
+        IF KH = 13 THEN KH = 10
+        IF (InsertKey = -1) THEN
+            IF (ID1 = ID2) THEN
+                CALL InsertBefore(ID1, LTRIM$(RTRIM$(CHR$(KH))))
+            ELSE
+                CALL InsertAfter(ID1, LTRIM$(RTRIM$(CHR$(KH))))
+                ID1 = NthP(ID1, 2)
+            END IF
+        ELSE
+            TheChain(ID1).Content = LTRIM$(RTRIM$(CHR$(KH)))
+            IF (ID1 = ID2) THEN
+                ID1 = NthP(ID1, 2)
+                ID2 = ID1
+            ELSE
+                ID1 = NthP(ID1, 2)
+            END IF
+        END IF
+        IF ((TextWrapping = 2) AND (Cursor1.X - LeftIndent = TextWidth)) THEN HScroll = HScroll + 1
+    END IF
+    '' F1
+    'IF (KH = 15104) THEN
+    '    IF (TextWrapping = 2) THEN
+    '        HScroll = HScroll - 1
+    '        IF (HScroll < 1) THEN HScroll = 1
+    '        CALL ReassignID1
+    '        CALL ReassignID2
+    '    END IF
+    'END IF
+    '' F2
+    'IF (KH = 15360) THEN
+    '    IF (TextWrapping = 2) THEN
+    '        HScroll = HScroll + 1
+    '        CALL ReassignID1
+    '        CALL ReassignID2
+    '    END IF
+    'END IF
+    '' F5
+    'IF (KH = 16128) THEN
+    '    q$ = Projection$(NthL(ID1, ChainLimit + 1), NthP(ID1, ChainLimit + 1))
+    '    Assimilate q$
+    'END IF
+    '' F4
+    'IF (KH = 15872) THEN
+    '    'CALL InsertRange(NthP(ID2, 2), CHR$(10) + "=" + CoreProcess$(Projection(ID1, ID2)))
+    '    CALL InsertRange(NthP(ID2, 2), CHR$(10) + "=" + SxriptEval$(Projection(ID1, ID2)))
+    '    ID2 = StartIndex
+    'END IF
+    ' F6
+    IF (KH = 16384) THEN
+        loadedFileContents$ = Projection$(NthL(ID1, ChainLimit + 1), NthP(ID1, ChainLimit + 1))
+        ExitEditor = true
+    END IF
+    ' F7
+    IF (KH = 16640) THEN
+        ExitEditor = true
+    END IF
+    '' F7
+    'IF (KH = 16640) THEN
+    '    Cursor1.X = LeftIndent + 1
+    '    CALL ReassignID1
+    '    Cursor2.X = LeftIndent + LEN(LineAsMapped(Cursor1.Y - TopIndent))
+    '    Cursor2.Y = Cursor1.Y
+    '    CALL ReassignID2
+    '    IF (LinearCount(StartIndex, ID2) > LinearCount(StartIndex, ID1)) THEN _CLIPBOARD$ = Projection$(ID1, ID2)
+    'END IF
+    '' F7
+    'IF (KH = 16640) THEN
+    '    GOLSwitch = -GOLSwitch
+    'END IF
+    ' F8
+    'IF (KH = 16896) THEN
+    '    Cursor1.X = LeftIndent + 1
+    '    CALL ReassignID1
+    '    Cursor2.X = LeftIndent + LEN(LineAsMapped(Cursor1.Y - TopIndent))
+    '    Cursor2.Y = Cursor1.Y
+    '    CALL ReassignID2
+    'END IF
+    ' Home
+    IF (KH = 18176) THEN
+        IF (TextWrapping = 2) THEN HScroll = 1
+        Cursor1.X = LeftIndent + 1
+        CALL ReassignID1
+    END IF
+    ' UpArrow
+    IF (KH = 18432) THEN
+        IF (Cursor1.Y > TopIndent + 1) THEN
+            Cursor1.Y = Cursor1.Y - 1
+        ELSE
+            StartIndex = BackBreak(StartIndex)
+        END IF
+        q = LeftIndent + LEN(LineAsMapped(Cursor1.Y - TopIndent)) - (HScroll - 1)
+        IF (Cursor1.X > q) THEN
+            IF (q < 0) THEN
+                IF (LEN(LineAsMapped(Cursor1.Y - TopIndent)) > TextWidth) THEN
+                    HScroll = 1 + LEN(LineAsMapped(Cursor1.Y - TopIndent)) - (Cursor1.X - LeftIndent)
+                ELSE
+                    HScroll = 1
+                    Cursor1.X = LeftIndent + LEN(LineAsMapped(Cursor1.Y - TopIndent))
+                END IF
+            ELSE
+                Cursor1.X = q
+            END IF
+        END IF
+        CALL ReassignID1
+    END IF
+    ' PgUp
+    IF (KH = 18688) THEN
+        FOR k = 1 TO INT(TextHeight / 2)
+            StartIndex = BackBreak(StartIndex)
+        NEXT
+        CALL ReassignID1
+    END IF
+    ' LeftArrow
+    IF (KH = 19200) THEN
+        ID1 = NthL(ID1, 2)
+        IF (TextWrapping = 2) THEN
+            IF (Cursor1.X = LeftIndent + 1) THEN
+                IF (HScroll > 1) THEN
+                    HScroll = HScroll - 1
+                ELSE
+                    j = Cursor1.Y - TopIndent - 1
+                    IF (j >= 1) THEN
+                        k = LEN(LineAsMapped(j)) - TextWidth + 1
+                        IF (k >= 1) THEN
+                            HScroll = k
+                        END IF
+                    END IF
+                END IF
+            END IF
+        ELSE
+            IF ((Cursor1.X - LeftIndent = 1) AND Cursor1.Y - TopIndent = 1) THEN
+                StartIndex = BackBreak(StartIndex)
+            END IF
+        END IF
+    END IF
+    ' RightArrow
+    IF (KH = 19712) THEN
+        ID1 = NthP(ID1, 2)
+        DIM m AS LONG, n AS LONG
+        m = Cursor1.X - LeftIndent
+        n = LEN(LineAsMapped(Cursor1.Y - TopIndent)) - HScroll + 1
+        IF (TextWrapping = 2) THEN
+            IF (m >= TextWidth) THEN
+                HScroll = HScroll + 1
+                CALL ReassignID1
+            END IF
+            IF (m >= n) THEN
+                j = Cursor1.Y - TopIndent + 1
+                IF ((j <= TextHeight) AND (VisibleLines > 1)) THEN HScroll = 1
+            END IF
+        ELSE
+            IF ((m >= n) AND (Cursor1.Y - TopIndent = VisibleLines)) THEN
+                IF (VisibleLines > 1) THEN StartIndex = NthP(StartIndex, LEN(LineAsMapped(1)) + 1)
+            END IF
+        END IF
+    END IF
+    ' End
+    IF (KH = 20224) THEN
+        Cursor1.X = LeftIndent + LEN(LineAsMapped(Cursor1.Y - TopIndent))
+        CALL ReassignID1
+        IF (TextWrapping = 2) THEN
+            q = LEN(LineAsMapped(Cursor1.Y - TopIndent)) - TextWidth + 1
+            IF (q >= 1) THEN HScroll = q
+        END IF
+    END IF
+    ' DownArrow
+    IF (KH = 20480) THEN
+        IF (Cursor1.Y = TopIndent + VisibleLines) THEN
+            IF (VisibleLines > 1) THEN
+                StartIndex = NthP(StartIndex, LEN(LineAsMapped(1)) + 1)
+                CALL MapText
+            END IF
+        ELSE
+            Cursor1.Y = Cursor1.Y + 1
+        END IF
+        q = LeftIndent + LEN(LineAsMapped(Cursor1.Y - TopIndent)) - (HScroll - 1)
+        IF (Cursor1.X > q) THEN
+            IF (q < 0) THEN
+                IF (LEN(LineAsMapped(Cursor1.Y - TopIndent)) > TextWidth) THEN
+                    HScroll = 1 + LEN(LineAsMapped(Cursor1.Y - TopIndent)) - (Cursor1.X - LeftIndent)
+                ELSE
+                    HScroll = 1
+                    Cursor1.X = LeftIndent + LEN(LineAsMapped(Cursor1.Y - TopIndent))
+                END IF
+            ELSE
+                Cursor1.X = q
+            END IF
+        END IF
+        CALL ReassignID1
+    END IF
+    ' PgDn
+    IF (KH = 20736) THEN
+        FOR k = 1 TO INT(TextHeight / 2)
+            IF (VisibleLines > 1) THEN
+                StartIndex = NthP(StartIndex, LEN(LineAsMapped(1)) + 1)
+                CALL MapText
+            END IF
+        NEXT
+        CALL ReassignID1
+    END IF
+    ' Insert
+    IF (KH = 20992) THEN
+        InsertKey = -InsertKey
+    END IF
+    ' Del
+    IF (KH = 21248) THEN
+        IF (LinearCount(StartIndex, ID2) > LinearCount(StartIndex, ID1)) THEN
+            r = TheChain(ID2).Pointer
+            q = TheChain(ID1).Lagger
+            DIM p AS LONG
+            p = ID1
+            CALL UnlinkRange(ID1, ID2)
+            IF ((r = EOC) AND (q = BOC)) THEN
+                ID1 = p
+                ID2 = ID1
+                StartIndex = p
+            ELSE
+                IF (q = BOC) THEN
+                    ID1 = r
+                ELSE
+                    ID1 = q
+                    IF (p = StartIndex) THEN StartIndex = q
+                END IF
+                ID2 = NthP(ID1, 2)
+            END IF
+        END IF
+    END IF
+    '' F11
+    'IF (KH = 34048) THEN TextFormatting = -TextFormatting
+    '' F12
+    'IF (KH = 34304) THEN
+    '    TextWrapping = TextWrapping + 1
+    '    IF (TextWrapping > 2) THEN TextWrapping = 0
+    '    ID1 = StartIndex
+    '    ID2 = ID1
+    '    HScroll = 1
+    'END IF
+    ' Exit sequence
+    TheReturn = 0
+    IF ((MH <> 0) OR (KH > 0)) THEN
+        TheReturn = 1
+        CALL MapText
+        CALL CalibrateCursor(ID1)
+        CALL CalibrateCursor(ID2)
+        ' Cursor sync and autoscrolling.
+        IF (Cursor1.Y > TopIndent + TextHeight - 1) THEN StartIndex = NthP(StartIndex, LEN(LineAsMapped(1)) + 1)
+    END IF
+    '_KEYCLEAR
+    StateChange = TheReturn
+END FUNCTION
+
+SUB CalibrateCursor (a AS LONG)
+    DIM s AS LONG, c AS LONG
+    DIM i AS LONG, j AS LONG, k AS LONG
+    DIM n AS LONG
+
+    ' Place Cursor under ID on rendered line.
+    s = StartIndex
+    IF ((TextWrapping = 2) AND (HScroll > 1)) THEN s = NthP(s, HScroll)
+    c = LinearCount(s, a)
+    k = 0
+    i = -1
+    FOR j = 1 TO VisibleLines
+        n = LEN(LineAsMapped(j))
+        IF (k + n < c) THEN
+            k = k + n
+        ELSE
+            i = c - k + 1
+            EXIT FOR
+        END IF
+    NEXT
+    IF (i >= LeftIndent + LEN(LineAsMapped(j))) THEN
+        IF (j <= VisibleLines) THEN
+            i = 1
+            j = j + 1
+        END IF
+    END IF
+    IF (a = ID1) THEN
+        Cursor1.X = LeftIndent + i
+        Cursor1.Y = TopIndent + j
+    END IF
+    IF (a = ID2) THEN
+        Cursor2.X = LeftIndent + i
+        Cursor2.Y = TopIndent + j
+    END IF
+END SUB
+
+FUNCTION FindID (a AS INTEGER, b AS LONG)
+    DIM RelX AS LONG, RelY AS LONG, k AS LONG, t AS LONG
+
+    ' Find identity under a map location.
+    RelX = a - LeftIndent
+    RelY = b - TopIndent
+    FOR k = 1 TO RelY - 1
+        t = t + LEN(LineAsMapped(k))
+    NEXT
+    t = t + RelX
+    FindID = t
+END FUNCTION
+
+SUB ReassignID1
+    ' Reassign identity under Cursor1.
+    ID1 = NthP(StartIndex, FindID(Cursor1.X, Cursor1.Y) + (HScroll - 1))
+END SUB
+
+SUB ReassignID2
+    ' Reassign identity under Cursor2.
+    ID2 = NthP(StartIndex, FindID(Cursor2.X, Cursor2.Y) + (HScroll - 1))
+END SUB
+
+SUB ThrowOutput
+    DIM LogTextCount AS LONG
+
+    'i = NthP(ID1, ChainLimit + 1)
+    'FOR k = 1 TO LogTextCount
+    '    CALL InsertRange(i, LogText(k) + CHR$(13))
+    'NEXT
+    LogTextCount = 0
+    CALL MapText
+    ID1 = NthP(ID1, ChainLimit + 1)
+    CALL CalibrateCursor(ID1)
+    CALL CalibrateCursor(ID2)
+    DO WHILE (Cursor1.Y > TopIndent + TextHeight - 1)
+        StartIndex = NthP(StartIndex, LEN(LineAsMapped(1)) + 1)
+        CALL MapText
+        CALL CalibrateCursor(ID1)
+        CALL CalibrateCursor(ID2)
+    LOOP
+    ID1 = NthP(ID1, ChainLimit + 1)
+    CALL PrintEverything
+END SUB
+
+SUB DisplayText (Col AS INTEGER, Row AS INTEGER, Shade1 AS INTEGER, Shade2 AS INTEGER, Text AS STRING)
+    COLOR Shade1, Shade2: _PRINTSTRING (Col, Row), Text
+END SUB
+

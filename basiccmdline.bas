@@ -8,6 +8,8 @@ DIM SHARED debugging AS _BYTE
 debugging = false
 'ON ERROR GOTO oops
 
+'$include:'qXed/qXed.bi'
+
 IF debugging = false THEN
     _CONSOLE OFF
 ELSE
@@ -15,8 +17,8 @@ ELSE
 END IF
 
 KEY 2, "LIST" + CHR$(13)
-KEY 3, "LOAD "
-KEY 4, "SAVE "
+KEY 3, "LOAD " + CHR$(34)
+KEY 4, "SAVE " + CHR$(34)
 KEY 5, "RUN" + CHR$(13)
 KEY ON
 
@@ -72,14 +74,16 @@ DIM loopControl(100) AS levelControlType
 DIM forControl(100) AS forControlType
 DIM currentDoLevel AS INTEGER, currentIfLevel AS INTEGER, currentForLevel AS INTEGER
 DIM SHARED errorHappened AS _BYTE
-DIM SHARED keyhit AS LONG
+DIM SHARED keyhit AS LONG, screenKeyStatus AS _BYTE
 DIM externalLimit AS INTEGER
 DIM temp$, L$, L1$, saveFile$, q AS STRING * 1, k$
 DIM MyBad AS _BYTE, Comma1 AS INTEGER, Comma2 AS INTEGER, Comma3 AS INTEGER
 DIM SHARED running AS _BYTE, loaded AS _BYTE, loadedFile$
+DIM SHARED loadedFileContents$
 
 thisScope$ = "MAIN MODULE"
 varType_DEFAULT = varTypeSINGLE
+screenKeyStatus = true
 
 IF _FILEEXISTS(COMMAND$) THEN
     loaded = load(COMMAND$)
@@ -242,24 +246,24 @@ DO
                     PRINT "No program loaded."
                 END IF
             END IF
-        ELSEIF LEFT$(L$, 7) = "INSERT " AND VAL(MID$(L$, 8)) > 0 THEN
-            IF NOT running THEN
-                IF loaded THEN
-                    IF VAL(MID$(L$, 8)) <= UBOUND(program) THEN
-                        REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
-                        FOR i = UBOUND(program) - 1 TO VAL(MID$(L$, 8)) STEP -1
-                            program(i + 1) = program(i)
-                        NEXT
-                        program(VAL(MID$(L$, 8))) = ""
-                        L$ = "EDIT " + MID$(L$, 8)
-                        GOTO Edit
-                    ELSE
-                        PRINT "Invalid line number -"; VAL(MID$(L$, 8))
-                    END IF
-                ELSE
-                    PRINT "No program loaded."
-                END IF
-            END IF
+            'ELSEIF LEFT$(L$, 7) = "INSERT " AND VAL(MID$(L$, 8)) > 0 THEN
+            '    IF NOT running THEN
+            '        IF loaded THEN
+            '            IF VAL(MID$(L$, 8)) <= UBOUND(program) THEN
+            '                REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
+            '                FOR i = UBOUND(program) - 1 TO VAL(MID$(L$, 8)) STEP -1
+            '                    program(i + 1) = program(i)
+            '                NEXT
+            '                program(VAL(MID$(L$, 8))) = ""
+            '                L$ = "EDIT " + MID$(L$, 8)
+            '                GOTO Edit
+            '            ELSE
+            '                PRINT "Invalid line number -"; VAL(MID$(L$, 8))
+            '            END IF
+            '        ELSE
+            '            PRINT "No program loaded."
+            '        END IF
+            '    END IF
         ELSEIF LEFT$(L$, 6) = "CHDIR " THEN
             CHDIR Parse$(MID$(L1$, 7))
         ELSEIF LEFT$(L$, 6) = "MKDIR " THEN
@@ -373,63 +377,99 @@ DO
                 IF LEN(L$) > 3 THEN loadedFile$ = MID$(L$, 5) ELSE loadedFile$ = ""
                 loaded = true
                 REDIM SHARED program(1) AS STRING
+                loadedFileContents$ = CHR$(10)
+                GOTO launchEditor
             END IF
         ELSEIF L$ = "_DISPLAY" THEN
             _DISPLAY
-        ELSEIF LEFT$(L$, 5) = "EDIT " AND VAL(MID$(L$, 6)) > 0 THEN
-            IF NOT running THEN
-                Edit:
-                IF loaded THEN
-                    IF VAL(MID$(L$, 6)) = UBOUND(program) + 1 THEN
-                        REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
-                        'EDIT can be used to increase program size without the need for INSERT
-                    END IF
+            'ELSEIF LEFT$(L$, 5) = "EDIT " AND VAL(MID$(L$, 6)) > 0 THEN
+            '    IF NOT running THEN
+            '        Edit:
+            '        IF loaded THEN
+            '            IF VAL(MID$(L$, 6)) = UBOUND(program) + 1 THEN
+            '                REDIM _PRESERVE program(UBOUND(program) + 1) AS STRING
+            '                'EDIT can be used to increase program size without the need for INSERT
+            '            END IF
 
-                    IF VAL(MID$(L$, 6)) <= UBOUND(program) THEN
-                        DIM row AS INTEGER, col AS INTEGER
-                        row = CSRLIN: col = POS(1)
-                        PRINT LEFT$(program(VAL(MID$(L$, 6))), 80);
-                        DO
-                            LOCATE row, col, 1
-                            k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
-                            SELECT CASE k$
-                                CASE CHR$(13)
-                                    DIM p$
-                                    p$ = ""
-                                    FOR i = 1 TO 80
-                                        p$ = p$ + CHR$(SCREEN(row, i))
-                                    NEXT
-                                    program(VAL(MID$(L$, 6))) = RTRIM$(p$)
-                                    EXIT DO
-                                CASE CHR$(27)
-                                    EXIT DO
-                                CASE CHR$(8)
-                                    IF col > 1 THEN
-                                        FOR i = col TO 80
-                                            LOCATE row, i - 1
-                                            PRINT CHR$(SCREEN(row, i));
-                                        NEXT
-                                        col = col - 1
-                                    END IF
-                                CASE CHR$(0) + CHR$(83)
-                                    FOR i = col TO 79
-                                        LOCATE row, i
-                                        PRINT CHR$(SCREEN(row, i + 1));
-                                    NEXT
-                                CASE CHR$(0) + CHR$(75)
-                                    IF col > 1 THEN col = col - 1
-                                CASE CHR$(0) + CHR$(77)
-                                    IF col < 80 THEN col = col + 1
-                                CASE ELSE
-                                    PRINT k$;
-                                    IF col < 80 THEN col = col + 1
-                            END SELECT
+            '            IF VAL(MID$(L$, 6)) <= UBOUND(program) THEN
+            '                DIM row AS INTEGER, col AS INTEGER
+            '                row = CSRLIN: col = POS(1)
+            '                PRINT LEFT$(program(VAL(MID$(L$, 6))), 80);
+            '                DO
+            '                    LOCATE row, col, 1
+            '                    k$ = "": WHILE k$ = "": k$ = INKEY$: _LIMIT 30: WEND
+            '                    SELECT CASE k$
+            '                        CASE CHR$(13)
+            '                            DIM p$
+            '                            p$ = ""
+            '                            FOR i = 1 TO 80
+            '                                p$ = p$ + CHR$(SCREEN(row, i))
+            '                            NEXT
+            '                            program(VAL(MID$(L$, 6))) = RTRIM$(p$)
+            '                            EXIT DO
+            '                        CASE CHR$(27)
+            '                            EXIT DO
+            '                        CASE CHR$(8)
+            '                            IF col > 1 THEN
+            '                                FOR i = col TO 80
+            '                                    LOCATE row, i - 1
+            '                                    PRINT CHR$(SCREEN(row, i));
+            '                                NEXT
+            '                                col = col - 1
+            '                            END IF
+            '                        CASE CHR$(0) + CHR$(83)
+            '                            FOR i = col TO 79
+            '                                LOCATE row, i
+            '                                PRINT CHR$(SCREEN(row, i + 1));
+            '                            NEXT
+            '                        CASE CHR$(0) + CHR$(75)
+            '                            IF col > 1 THEN col = col - 1
+            '                        CASE CHR$(0) + CHR$(77)
+            '                            IF col < 80 THEN col = col + 1
+            '                        CASE ELSE
+            '                            PRINT k$;
+            '                            IF col < 80 THEN col = col + 1
+            '                    END SELECT
+            '                LOOP
+            '                PRINT
+            '                LOCATE , , 0
+            '            ELSE
+            '                PRINT "Invalid line number -"; VAL(MID$(L$, 6))
+            '            END IF
+            '        ELSE
+            '            PRINT "No program loaded."
+            '        END IF
+            '    END IF
+        ELSEIF L$ = "EDIT" THEN
+            IF NOT running THEN
+                launchEditor:
+                IF loaded THEN
+                    _KEYCLEAR
+                    Editor
+                    DIM findLF1 AS LONG, findLF2 AS LONG
+                    findLF1 = INSTR(loadedFileContents$, CHR$(10))
+                    IF findLF1 THEN
+                        currentLine = 1
+                        IF currentLine > UBOUND(program) THEN REDIM _PRESERVE program(currentLine + 999) AS STRING
+                        program(currentLine) = LEFT$(loadedFileContents$, findLF1 - 1)
+                        DO WHILE findLF1
+                            findLF2 = INSTR(findLF1 + 1, loadedFileContents$, CHR$(10))
+                            currentLine = currentLine + 1
+                            IF currentLine > UBOUND(program) THEN REDIM _PRESERVE program(currentLine + 999) AS STRING
+                            IF findLF2 = 0 THEN
+                                program(currentLine) = MID$(loadedFileContents$, findLF1 + 1)
+                            ELSE
+                                program(currentLine) = MID$(loadedFileContents$, findLF1 + 1, findLF2 - findLF1 - 1)
+                            END IF
+                            findLF1 = findLF2
                         LOOP
-                        PRINT
-                        LOCATE , , 0
+                        REDIM _PRESERVE program(currentLine) AS STRING
+                        currentLine = 0
                     ELSE
-                        PRINT "Invalid line number -"; VAL(MID$(L$, 6))
+                        REDIM _PRESERVE program(1) AS STRING
+                        program(1) = loadedFileContents$
                     END IF
+                    _KEYCLEAR
                 ELSE
                     PRINT "No program loaded."
                 END IF
@@ -534,7 +574,7 @@ DO
                 END IF
             END IF
         ELSEIF LEFT$(L$, 6) = "WIDTH " THEN
-            DIM p1$, p2$
+            DIM p$, p1$, p2$
             p$ = MID$(L$, 7)
             IF INSTR(p$, ",") THEN
                 p1$ = LEFT$(p$, INSTR(p$, ",") - 1)
@@ -556,8 +596,10 @@ DO
         ELSEIF LEFT$(L$, 4) = "KEY " THEN
             IF _TRIM$(MID$(L$, 5)) = "ON" THEN
                 KEY ON
+                screenKeyStatus = true
             ELSEIF _TRIM$(MID$(L$, 5)) = "OFF" THEN
                 KEY OFF
+                screenKeyStatus = false
             ELSE
                 GOTO syntaxerror
             END IF
@@ -1315,12 +1357,15 @@ FUNCTION load%% (file$)
     OPEN file$ FOR BINARY AS ff
 
     currentLine = 0
+    loadedFileContents$ = ""
     DO
         IF EOF(ff) THEN EXIT DO
         LINE INPUT #ff, l$
         currentLine = currentLine + 1
         IF currentLine > UBOUND(program) THEN REDIM _PRESERVE program(currentLine + 999) AS STRING
         program(currentLine) = l$
+        IF LEN(loadedFileContents$) > 0 THEN loadedFileContents$ = loadedFileContents$ + CHR$(10)
+        loadedFileContents$ = loadedFileContents$ + l$
     LOOP
 
     CLOSE ff
@@ -2259,3 +2304,5 @@ FUNCTION Find& (start AS LONG, text$, subtext$)
 
     Find& = p
 END FUNCTION
+
+'$include:'qXed/qXed.bm'
