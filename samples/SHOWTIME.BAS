@@ -7,7 +7,6 @@ DO
     LOCATE 1, 1
     PRINT TIME$
     _DISPLAY
-    _LIMIT 30
     a$ = INKEY$
     b = LEN(a$)
     IF b > 0 THEN

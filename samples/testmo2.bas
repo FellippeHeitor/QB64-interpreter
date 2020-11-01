@@ -1,6 +1,8 @@
 KEY OFF
+CLS
 DO
-    CLS
+    k$ = INKEY$
+    LOCATE 1, 1
     i = _MOUSEINPUT
     PRINT "Use your mouse..."
     PRINT
@@ -13,7 +15,15 @@ DO
     PRINT "Mouse Button 2 =";
     PRINT _MOUSEBUTTON(2)
 
-    _LIMIT 60
+    LOCATE _MOUSEY, _MOUSEX
+    IF _MOUSEBUTTON(1) THEN
+        PRINT CHR$(219);
+    END IF
+
+    IF _MOUSEBUTTON(2) THEN
+        PRINT CHR$(176);
+    END IF
+
     _DISPLAY
-LOOP
+LOOP UNTIL k$ = CHR$(27)
 KEY ON
