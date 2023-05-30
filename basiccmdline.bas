@@ -112,7 +112,7 @@ DO
 LOOP
 
 QB64Functions:
-DATA val,int,asc,cos,sin,len,rnd,timer,time$,date$
+DATA val,int,asc,cos,sin,len,rnd,timer,time$,date$, beep, sound
 DATA chr$,inkey$,_width,_height,_mousex,_mousey,_mousebutton
 DATA str$,asc,_resize,_resizewidth,_resizeheight,_scaledwidth
 DATA _scaledheight,_screenhide,_console,_blink,_fileexists
@@ -662,6 +662,13 @@ DO
             FILES
         ELSEIF LEFT$(L$, 9) = "_SNDPLAY " THEN
             _SNDPLAY VAL(Parse$(MID$(L$, 10)))
+        ELSEIF LEFT$(L$, 5) = "BEEP" THEN
+            BEEP
+        ELSEIF LEFT$(L$, 6) = "SOUND " THEN
+            c$ = MID$(L$, 7)
+            c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
+            c2$ = MID$(c$, INSTR(c$, ",") + 1)
+            SOUND VAL(c1$), VAL(c2$)
         ELSEIF LEFT$(L$, 8) = "CIRCLE (" THEN
             IF _PIXELSIZE(_DEST) = 0 THEN throwError 5: GOTO Parse.Done
             Comma1% = INSTR(L$, ","): Comma2% = INSTR(Comma1% + 1, L$, ","): Comma3% = INSTR(Comma2% + 1, L$, ",")
