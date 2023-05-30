@@ -668,7 +668,12 @@ DO
             c$ = MID$(L$, 7)
             c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
             c2$ = MID$(c$, INSTR(c$, ",") + 1)
-            SOUND VAL(c1$), VAL(c2$)
+            IF (VAL(c1$) = 0 OR (VAL(c1$) >= 37 AND VAL(c1$) <= 32767)) THEN 
+                SOUND VAL(c1$), VAL(c2$)
+            ELSE
+                PRINT "Illegal frequency. Valid = 0 (delay), and 32 to 32767"
+                GOTO Parse.Done
+            END IF
         ELSEIF LEFT$(L$, 8) = "CIRCLE (" THEN
             IF _PIXELSIZE(_DEST) = 0 THEN throwError 5: GOTO Parse.Done
             Comma1% = INSTR(L$, ","): Comma2% = INSTR(Comma1% + 1, L$, ","): Comma3% = INSTR(Comma2% + 1, L$, ",")
