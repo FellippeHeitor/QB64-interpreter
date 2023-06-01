@@ -668,7 +668,7 @@ DO
             c$ = MID$(L$, 7)
             c1$ = LEFT$(c$, INSTR(c$, ",") - 1)
             c2$ = MID$(c$, INSTR(c$, ",") + 1)
-            IF (VAL(c1$) = 0 OR (VAL(c1$) >= 37 AND VAL(c1$) <= 32767)) THEN 
+            IF (VAL(c1$) = 0 OR (VAL(c1$) >= 32 AND VAL(c1$) <= 32767)) THEN 
                 SOUND VAL(c1$), VAL(c2$)
             ELSE
                 PRINT "Illegal frequency. Valid = 0 (delay), and 32 to 32767"
